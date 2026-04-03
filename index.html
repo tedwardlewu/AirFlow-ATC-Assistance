@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Airflow ATC | Montreal Ops</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="app-shell">
+        <header class="topbar">
+            <div class="topbar-copy">
+                <p class="eyebrow">Airfield Operations</p>
+                <h1>Montreal-Trudeau Surface Operations Dashboard</h1>
+                <p class="topbar-subtitle">Live surface geometry, runway labeling, and movement context layered over the YUL airfield map.</p>
+            </div>
+            <div class="topbar-meta">
+                <div class="chip status-live">
+                    <span class="status-dot"></span>
+                    Surface Feed Online
+                </div>
+                <div class="chip mono" id="clock">12:00:00Z</div>
+            </div>
+        </header>
+
+        <main class="dashboard-grid">
+            <section class="hero-card overview-card">
+                <div class="map-overlay-top">
+                    <div class="map-heading">
+                        <p class="eyebrow">Surface Map</p>
+                        <h2>Interactive Airport Overview</h2>
+                        <p>Realistic YUL surface layout with KML-derived runways, taxiways, roads, holds, center lines, and parking guidance.</p>
+                    </div>
+                    <div class="legend map-legend">
+                        <span class="legend-chip"><i class="legend-swatch runway"></i> Runways</span>
+                        <span class="legend-chip"><i class="legend-swatch taxiway"></i> Taxiways</span>
+                        <span class="legend-chip"><i class="legend-swatch centerline"></i> Center Lines</span>
+                        <span class="legend-chip"><i class="legend-swatch hold-line"></i> Holds</span>
+                        <span class="legend-chip"><i class="legend-swatch road-line"></i> Roads</span>
+                        <span class="legend-chip"><i class="legend-swatch kml"></i> Parking Lines</span>
+                    </div>
+                </div>
+
+                <div class="map-stage">
+                    <div id="airport-map" aria-label="Interactive Montreal-Trudeau airport map"></div>
+
+                    <div class="map-callout weather">
+                        <span class="callout-label">Weather</span>
+                        <strong>VFR</strong>
+                        <small>Wind 260@9kt · Vis 12km</small>
+                    </div>
+
+                    <div class="map-callout traffic">
+                        <span class="callout-label">Surface Load</span>
+                        <strong>18 Active Movements</strong>
+                        <small>3 departures sequencing</small>
+                    </div>
+
+                    <div class="map-callout nav-tip">
+                        <span class="callout-label">Map Controls</span>
+                        <strong>Scroll to zoom</strong>
+                        <small>Drag to pan around the airport surface</small>
+                    </div>
+
+                    <div class="map-callout kml-summary" id="kml-summary">
+                        <span class="callout-label">KML Groups</span>
+                        <strong>0 runway, 0 taxiway</strong>
+                        <small>0 center line, 0 hold, 0 road, 0 parking features</small>
+                    </div>
+                </div>
+            </section>
+
+            <aside class="hero-card stats-card">
+                <div class="section-heading">
+                    <div>
+                        <p class="eyebrow">Operations Snapshot</p>
+                        <h2>Live Metrics</h2>
+                    </div>
+                </div>
+
+                <div class="stats-grid">
+                    <article class="metric">
+                        <span class="metric-label">Departures</span>
+                        <strong id="departures-count">18</strong>
+                        <small>Next bank in 14 min</small>
+                    </article>
+                    <article class="metric">
+                        <span class="metric-label">Arrivals</span>
+                        <strong id="arrivals-count">21</strong>
+                        <small>ILS 24L active</small>
+                    </article>
+                    <article class="metric">
+                        <span class="metric-label">Ground Units</span>
+                        <strong id="vehicles-count">11</strong>
+                        <small>Fuel, de-ice, ops, tow</small>
+                    </article>
+                    <article class="metric alert-metric">
+                        <span class="metric-label">Restrictions</span>
+                        <strong>2</strong>
+                        <small>Terminal crossing flow</small>
+                    </article>
+                </div>
+
+                <div class="runway-strip" id="runway-strip"></div>
+            </aside>
+
+            <section class="panel flights-panel">
+                <div class="section-heading compact">
+                    <div>
+                        <p class="eyebrow">Movement Board</p>
+                        <h2>Flight Information</h2>
+                    </div>
+                </div>
+                <div class="table-list" id="flight-table"></div>
+            </section>
+
+            <section class="panel gates-panel">
+                <div class="section-heading compact">
+                    <div>
+                        <p class="eyebrow">Terminal Coordination</p>
+                        <h2>Gates and Stands</h2>
+                    </div>
+                </div>
+                <div class="gate-grid" id="gate-grid"></div>
+            </section>
+
+            <section class="panel vehicles-panel">
+                <div class="section-heading compact">
+                    <div>
+                        <p class="eyebrow">Ramp Network</p>
+                        <h2>Ground Vehicles</h2>
+                    </div>
+                </div>
+                <div class="vehicle-list" id="vehicle-list"></div>
+            </section>
+
+            <section class="panel advisories-panel">
+                <div class="section-heading compact">
+                    <div>
+                        <p class="eyebrow">Tower Notes</p>
+                        <h2>Traffic and Advisories</h2>
+                    </div>
+                </div>
+                <div class="advisory-stack" id="advisory-stack"></div>
+            </section>
+        </main>
+    </div>
+
+    <script type="module" src="script.js"></script>
+</body>
+</html>
