@@ -728,4 +728,3 @@ return _.zk(b).then(function(){})});_.w("gapi.client.load",HB);_.w("gapi.client.
 _.w("gapi.client.rpcRequest",function(a,b,c){MB("gapi.client.rpcRequest");if(!a)throw new sA('Missing required parameter "method".');return new eB({method:a,apiVersion:b,rpcParams:c,transport:{name:"googleapis",root:c&&c.root||""}},2)});_.w("gapi.client.setApiKey",function(a){_.cf("client/apiKey",a);_.cf("googleapis.config/developerKey",a)});_.w("gapi.client.setApiVersions",function(a){MB("gapi.client.setApiVersions");_.cf("googleapis.config/versions",a)});_.w("gapi.client.getToken",function(a){return _.ui(a)});
 _.w("gapi.client.setToken",function(a,b){a?_.jw(a,b):_.kw(b)});_.w("gapi.client.AuthType",{xna:"auto",NONE:"none",ira:"oauth2",qpa:"1p"});_.w("gapi.client.AuthType.AUTO","auto");_.w("gapi.client.AuthType.NONE","none");_.w("gapi.client.AuthType.OAUTH2","oauth2");_.w("gapi.client.AuthType.FIRST_PARTY","1p");
 });
-// Google Inc.
