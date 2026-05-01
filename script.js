@@ -425,10 +425,12 @@ function getZoomScaledLineWeight(baseWeight, zoom, minScale = 0.06, minWeight = 
     const minZoom = 12;
     const maxZoom = 19;
     const zoomRatio = Math.min(Math.max((zoom - minZoom) / (maxZoom - minZoom), 0), 1);
-    const easedZoomRatio = Math.pow(zoomRatio, 2.1);
-    const scale = minScale + (easedZoomRatio * (1 - minScale));
+    const effectiveMinScale = Math.max(minScale, 0.72);
+    const effectiveMinWeight = Math.max(minWeight, baseWeight * effectiveMinScale);
+    const easedZoomRatio = Math.pow(zoomRatio, 1.35);
+    const scale = effectiveMinScale + (easedZoomRatio * (1 - effectiveMinScale));
 
-    return Math.max(baseWeight * scale, minWeight);
+    return Math.max(baseWeight * scale, effectiveMinWeight);
 }
 
 const yulKmlOverlay = parseKmlOverlay(montrealYulKml);
@@ -653,6 +655,328 @@ function projectPointOnSegment(point, start, end) {
         distanceSquared: (deltaLat ** 2) + (deltaLng ** 2),
         projectionFactor
     };
+}
+
+function getPointDistanceSquared(start, end) {
+    const deltaLat = start[0] - end[0];
+    const deltaLng = start[1] - end[1];
+    return (deltaLat ** 2) + (deltaLng ** 2);
+}
+
+function getLatLngDistanceSquared(start, end) {
+    const deltaLat = start.lat - end.lat;
+    const deltaLng = start.lng - end.lng;
+    return (deltaLat ** 2) + (deltaLng ** 2);
+}
+
+function getLinePoints(entry) {
+    return Array.isArray(entry) ? entry : entry.linePoints;
+}
+
+function dedupeRoutePoints(points) {
+    return points.reduce((route, point) => {
+        if (!point) {
+            return route;
+        }
+
+        if (!route.length || getPointDistanceSquared(route.at(-1), point) > 1e-12) {
+            route.push(point);
+        }
+
+        return route;
+    }, []);
+}
+
+function buildBridgeRoute(start, end) {
+    if (!start || !end) {
+        return [];
+    }
+
+    if (getPointDistanceSquared(start, end) <= 1e-12) {
+        return [start];
+    }
+
+    return [start, end];
+}
+
+function getBestLineMatch(origin, entry) {
+    const linePoints = getLinePoints(entry);
+
+    if (!linePoints || linePoints.length < 2) {
+        return null;
+    }
+
+    let bestMatch = null;
+
+    for (let index = 0; index < linePoints.length - 1; index += 1) {
+        const projection = projectPointOnSegment(origin, linePoints[index], linePoints[index + 1]);
+
+        if (!bestMatch || projection.distanceSquared < bestMatch.distanceSquared) {
+            bestMatch = {
+                entry,
+                linePoints,
+                segmentIndex: index,
+                projectedPoint: projection.point,
+                distanceSquared: projection.distanceSquared
+            };
+        }
+    }
+
+    return bestMatch;
+}
+
+function findLineMatches(origin, entries) {
+    return entries
+        .map((entry) => getBestLineMatch(origin, entry))
+        .filter(Boolean)
+        .sort((left, right) => left.distanceSquared - right.distanceSquared);
+}
+
+function findNearestLineMatch(origin, entries) {
+    return findLineMatches(origin, entries)[0] ?? null;
+}
+
+function getNearestLineDistanceSquared(point, entries) {
+    return findNearestLineMatch(point, entries)?.distanceSquared ?? Infinity;
+}
+
+function orientParkingPushbackRoute(linePoints, taxiwayLines) {
+    if (linePoints.length < 2) {
+        return null;
+    }
+
+    const firstEndpointDistance = getNearestLineDistanceSquared(linePoints[0], taxiwayLines);
+    const lastEndpointDistance = getNearestLineDistanceSquared(linePoints.at(-1), taxiwayLines);
+
+    return firstEndpointDistance <= lastEndpointDistance
+        ? [...linePoints].reverse()
+        : [...linePoints];
+}
+
+function buildRunwayDepartureRoute(runwayMatch) {
+    const forwardRoute = [
+        runwayMatch.projectedPoint,
+        ...runwayMatch.linePoints.slice(runwayMatch.segmentIndex + 1)
+    ];
+    const reverseRoute = [
+        runwayMatch.projectedPoint,
+        ...runwayMatch.linePoints.slice(0, runwayMatch.segmentIndex + 1).reverse()
+    ];
+    const chosenRoute = measurePolylineLength(forwardRoute) >= measurePolylineLength(reverseRoute)
+        ? forwardRoute
+        : reverseRoute;
+
+    if (chosenRoute.length < 2) {
+        return null;
+    }
+
+    const runwayEnd = chosenRoute.at(-1);
+    const runwayPreEnd = chosenRoute.at(-2) ?? chosenRoute[0];
+    const exitPoint = [
+        runwayEnd[0] + ((runwayEnd[0] - runwayPreEnd[0]) * 0.45),
+        runwayEnd[1] + ((runwayEnd[1] - runwayPreEnd[1]) * 0.45)
+    ];
+
+    return {
+        route: dedupeRoutePoints([...chosenRoute, exitPoint]),
+        runwayName: runwayMatch.entry.name ?? "Departure Runway"
+    };
+}
+
+function buildTaxiRouteToRunway(origin, taxiwayLines, runwayEntries, runwayPreference = 0) {
+    let bestOption = null;
+
+    findLineMatches(origin, taxiwayLines)
+        .slice(0, 12)
+        .forEach((taxiMatch) => {
+            const candidateTaxiRoutes = [
+                [taxiMatch.projectedPoint, ...taxiMatch.linePoints.slice(taxiMatch.segmentIndex + 1)],
+                [taxiMatch.projectedPoint, ...taxiMatch.linePoints.slice(0, taxiMatch.segmentIndex + 1).reverse()]
+            ].map((route) => dedupeRoutePoints(route)).filter((route) => route.length > 1);
+
+            candidateTaxiRoutes.forEach((taxiRoute) => {
+                const taxiEndpoint = taxiRoute.at(-1);
+                const runwayMatches = findLineMatches(taxiEndpoint, runwayEntries);
+
+                if (!runwayMatches.length) {
+                    return;
+                }
+
+                const runwayPoolSize = Math.max(1, Math.min(runwayMatches.length, 2));
+                const runwayMatch = runwayMatches[Math.min(runwayPreference % runwayPoolSize, runwayMatches.length - 1)];
+                const runwayDeparture = buildRunwayDepartureRoute(runwayMatch);
+
+                if (!runwayDeparture) {
+                    return;
+                }
+
+                const taxiBridgePenalty = taxiMatch.distanceSquared * 3500;
+                const runwayBridgePenalty = runwayMatch.distanceSquared * 6000;
+                const score = taxiBridgePenalty + runwayBridgePenalty + (measurePolylineLength(taxiRoute) * 0.12);
+
+                if (!bestOption || score < bestOption.score) {
+                    bestOption = {
+                        score,
+                        taxiMatch,
+                        taxiRoute,
+                        runwayMatch,
+                        runwayRoute: runwayDeparture.route,
+                        runwayName: runwayDeparture.runwayName
+                    };
+                }
+            });
+        });
+
+    return bestOption;
+}
+
+function getRouteProgressForPoint(routeProfile, point) {
+    if (!routeProfile.totalLength || !routeProfile.segments.length) {
+        return { progress: 0, distanceSquared: Infinity };
+    }
+
+    let bestMatch = null;
+
+    routeProfile.segments.forEach((segment) => {
+        const projection = projectPointOnSegment(point, segment.start, segment.end);
+        const distanceAlongSegment = projection.projectionFactor * segment.length;
+        const progress = (segment.startDistance + distanceAlongSegment) / routeProfile.totalLength;
+
+        if (!bestMatch || projection.distanceSquared < bestMatch.distanceSquared) {
+            bestMatch = {
+                progress,
+                distanceSquared: projection.distanceSquared
+            };
+        }
+    });
+
+    return bestMatch ?? { progress: 0, distanceSquared: Infinity };
+}
+
+function getHoldProgress(routeProfile, holdEntries, runwayStart) {
+    const bestHold = holdEntries.reduce((closestHold, holdEntry) => {
+        const holdMatch = holdEntry.linePoints.reduce((bestPointMatch, holdPoint) => {
+            const pointMatch = getRouteProgressForPoint(routeProfile, holdPoint);
+            return !bestPointMatch || pointMatch.distanceSquared < bestPointMatch.distanceSquared
+                ? pointMatch
+                : bestPointMatch;
+        }, null);
+
+        if (!holdMatch) {
+            return closestHold;
+        }
+
+        if (!closestHold || holdMatch.distanceSquared < closestHold.distanceSquared) {
+            return holdMatch;
+        }
+
+        return closestHold;
+    }, null);
+
+    if (!bestHold || bestHold.distanceSquared > 8e-7) {
+        return Math.max(runwayStart - 0.03, 0.05);
+    }
+
+    return Math.max(Math.min(bestHold.progress - 0.006, runwayStart - 0.008), 0.05);
+}
+
+function buildDepartureRoute(origin, parkingEntries, taxiwayLines, runwayEntries, holdEntries, runwayPreference = 0, reservedParkingIds = new Set()) {
+    const parkingMatches = findLineMatches(origin, parkingEntries);
+    const parkingMatch = parkingMatches.find((match) => !reservedParkingIds.has(match.entry.id))
+        ?? parkingMatches[0]
+        ?? null;
+
+    if (!parkingMatch) {
+        return null;
+    }
+
+    const parkingRoute = orientParkingPushbackRoute(parkingMatch.linePoints, taxiwayLines);
+
+    if (!parkingRoute?.length) {
+        return null;
+    }
+
+    const parkingConnector = parkingRoute.at(-1);
+    const taxiSelection = buildTaxiRouteToRunway(parkingConnector, taxiwayLines, runwayEntries, runwayPreference);
+
+    if (!taxiSelection) {
+        return null;
+    }
+
+    const taxiJoinRoute = buildBridgeRoute(parkingConnector, taxiSelection.taxiMatch.projectedPoint);
+    const runwayJoinRoute = buildBridgeRoute(taxiSelection.taxiRoute.at(-1), taxiSelection.runwayMatch.projectedPoint);
+    const route = dedupeRoutePoints([
+        ...parkingRoute,
+        ...taxiJoinRoute,
+        ...taxiSelection.taxiRoute,
+        ...runwayJoinRoute,
+        ...taxiSelection.runwayRoute
+    ]);
+    const totalLength = measurePolylineLength(route);
+
+    if (route.length < 2 || !totalLength) {
+        return null;
+    }
+
+    const routeProfile = createRouteProfile(route);
+    const pushbackDistance = measurePolylineLength(parkingRoute);
+    const runwayStartDistance = pushbackDistance
+        + measurePolylineLength(taxiJoinRoute)
+        + measurePolylineLength(taxiSelection.taxiRoute)
+        + measurePolylineLength(runwayJoinRoute);
+    const runwayStart = Math.min(runwayStartDistance / totalLength, 0.98);
+    const holdProgress = getHoldProgress(routeProfile, holdEntries, runwayStart);
+
+    return {
+        route,
+        parkingId: parkingMatch.entry.id,
+        parkingName: parkingMatch.entry.name ?? "Parking Line",
+        runwayName: taxiSelection.runwayName,
+        pushbackEnd: pushbackDistance / totalLength,
+        holdProgress,
+        runwayStart
+    };
+}
+
+function getDepartureSpeed(plane) {
+    if (plane.progress < plane.pushbackEnd) {
+        return plane.pushbackSpeed;
+    }
+
+    if (plane.progress < plane.holdProgress) {
+        return plane.taxiSpeed;
+    }
+
+    if (plane.progress < plane.runwayStart) {
+        return plane.lineupSpeed;
+    }
+
+    const takeoffProgress = (plane.progress - plane.runwayStart) / Math.max(1 - plane.runwayStart, 0.0001);
+    return plane.runwaySpeed + (plane.takeoffAcceleration * takeoffProgress);
+}
+
+function isPlaneOnRunway(plane) {
+    return plane.progress >= plane.runwayStart && plane.progress < 0.995;
+}
+
+function getRunwayHoldProgress(plane) {
+    return Math.max(plane.holdProgress, plane.pushbackEnd + 0.01);
+}
+
+function getMinimumPlaneSpacingSquared(plane) {
+    if (plane.progress < plane.pushbackEnd) {
+        return 3.5e-8;
+    }
+
+    if (plane.progress < plane.holdProgress) {
+        return 5e-8;
+    }
+
+    if (plane.progress < plane.runwayStart) {
+        return 6.5e-8;
+    }
+
+    return 8e-8;
 }
 
 function buildTaxiwayPlaneRoute(origin, taxiwayLines) {
@@ -915,6 +1239,9 @@ function setupMap() {
     };
     const scalableKmlLayers = [];
     const taxiwayLineSets = [];
+    const parkingLineSets = [];
+    const runwayLineSets = [];
+    const holdLineSets = [];
     const movingPlaneLayer = L.featureGroup().addTo(map);
 
     function registerScalableLayer(layer, baseWeight, scaleOptions = {}) {
@@ -983,6 +1310,18 @@ function setupMap() {
             if (category === "taxiways") {
                 taxiwayLineSets.push(linePoints);
             } else {
+                if (category === "runways") {
+                    runwayLineSets.push({ id: `${placemark.id}-runway-${kmlCounts[category]}`, name: placemark.name, linePoints });
+                }
+
+                if (category === "holds") {
+                    holdLineSets.push({ id: `${placemark.id}-hold-${kmlCounts[category]}`, name: placemark.name, linePoints });
+                }
+
+                if (category === "other") {
+                    parkingLineSets.push({ id: `${placemark.id}-parking-${kmlCounts[category]}`, name: placemark.name, linePoints });
+                }
+
                 addOutlinedPolyline(
                     targetLayer,
                     linePoints,
@@ -1044,28 +1383,47 @@ function setupMap() {
             lineJoin: "round"
         }).addTo(kmlGroups.taxiways), 2.6).bindPopup("<strong>Taxiways</strong><br>Taxiway network from Montreal YUL.kml");
 
+        const reservedParkingIds = new Set();
         const animatedPlanes = taxiPlaneFeed.map((plane, index) => {
             const gate = gateMarkers.find((gateMarker) => gateMarker.name.endsWith(plane.gate));
-            const route = gate ? buildTaxiwayPlaneRoute(gate.coords, taxiwayLineSets) : null;
+            const departureRoute = gate
+                ? buildDepartureRoute(gate.coords, parkingLineSets, taxiwayLineSets, runwayLineSets, holdLineSets, index, reservedParkingIds)
+                : null;
+            const route = departureRoute?.route ?? null;
             const routeProfile = route ? createRouteProfile(route) : null;
 
             if (!route || !routeProfile?.totalLength) {
                 return null;
             }
 
-            const initialProgress = (index / taxiPlaneFeed.length) * 0.38;
+            reservedParkingIds.add(departureRoute.parkingId);
+
+            const initialProgress = 0;
             const initialDirection = 1;
             const marker = L.marker(interpolateRouteProfile(routeProfile, initialProgress), {
                 icon: createPlaneMarkerIcon(plane.callsign, getPathHeading(routeProfile, initialProgress, initialDirection), map.getZoom()),
                 zIndexOffset: 6000,
                 keyboard: false
-            }).addTo(movingPlaneLayer).bindPopup(`<strong>${plane.callsign}</strong><br>Taxiing outbound from Gate ${plane.gate} on the taxiway network`);
+            }).addTo(movingPlaneLayer).bindPopup(`<strong>${plane.callsign}</strong><br>Pushback from Gate ${plane.gate}, taxi to ${departureRoute.runwayName}, then depart`);
 
             return {
                 ...plane,
                 marker,
                 route,
                 routeProfile,
+                parkingId: departureRoute.parkingId,
+                parkingName: departureRoute.parkingName,
+                runwayName: departureRoute.runwayName,
+                pushbackEnd: departureRoute.pushbackEnd,
+                holdProgress: departureRoute.holdProgress,
+                runwayStart: departureRoute.runwayStart,
+                pushbackSpeed: Math.max(plane.speed * 0.42, 0.0016),
+                taxiSpeed: Math.max(plane.speed * 0.58, 0.0022),
+                lineupSpeed: Math.max(plane.speed * 0.34, 0.0014),
+                runwaySpeed: Math.max(plane.speed * 5.2, 0.031),
+                takeoffAcceleration: Math.max(plane.speed * 9.5, 0.13),
+                holdDelayMs: 2400 + (index * 320),
+                holdStartedAt: null,
                 progress: initialProgress,
                 direction: initialDirection
             };
@@ -1091,14 +1449,67 @@ function setupMap() {
                 const deltaSeconds = (timestamp - lastTimestamp) / 1000;
                 lastTimestamp = timestamp;
 
-                animatedPlanes.forEach((plane) => {
-                    plane.progress += deltaSeconds * plane.speed * plane.direction;
+                const occupiedRunways = new Set(
+                    animatedPlanes
+                        .filter((plane) => isPlaneOnRunway(plane))
+                        .map((plane) => plane.runwayName)
+                );
+                const resolvedPositions = [];
 
-                    if (plane.progress >= 0.995) {
-                        plane.progress = 0.01;
+                [...animatedPlanes]
+                    .sort((left, right) => right.progress - left.progress)
+                    .forEach((plane) => {
+                    const previousProgress = plane.progress;
+                    let nextProgress = plane.progress + (deltaSeconds * getDepartureSpeed(plane) * plane.direction);
+
+                    if (
+                        plane.progress < plane.holdProgress
+                        && nextProgress >= plane.holdProgress
+                    ) {
+                        if (plane.holdStartedAt == null) {
+                            plane.holdStartedAt = timestamp;
+                        }
+
+                        plane.progress = plane.holdProgress;
+                    } else {
+                        plane.progress = nextProgress;
                     }
 
-                    const position = interpolateRouteProfile(plane.routeProfile, plane.progress);
+                    if (
+                        plane.progress >= plane.holdProgress
+                        && plane.progress < plane.runwayStart
+                    ) {
+                        const isWaitingForClearance = occupiedRunways.has(plane.runwayName)
+                            || plane.holdStartedAt == null
+                            || (timestamp - plane.holdStartedAt) < plane.holdDelayMs;
+
+                        if (isWaitingForClearance) {
+                            plane.progress = plane.holdProgress;
+                        }
+                    }
+
+                    if (plane.progress >= 1) {
+                        plane.progress = 0;
+                        plane.holdStartedAt = null;
+                    }
+
+                    let position = interpolateRouteProfile(plane.routeProfile, plane.progress);
+                    const minimumSpacingSquared = getMinimumPlaneSpacingSquared(plane);
+                    const tooCloseToAnotherPlane = resolvedPositions.some((entry) => {
+                        const spacingThreshold = Math.max(minimumSpacingSquared, entry.minimumSpacingSquared);
+                        return getLatLngDistanceSquared(position, entry.position) < spacingThreshold;
+                    });
+
+                    if (tooCloseToAnotherPlane) {
+                        plane.progress = previousProgress;
+                        position = interpolateRouteProfile(plane.routeProfile, plane.progress);
+                    }
+
+                    if (isPlaneOnRunway(plane)) {
+                        occupiedRunways.add(plane.runwayName);
+                    }
+
+                    resolvedPositions.push({ position, minimumSpacingSquared });
                     const heading = getPathHeading(plane.routeProfile, plane.progress, plane.direction);
                     plane.marker.setLatLng(position);
                     plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, heading, map.getZoom()));
@@ -1123,9 +1534,9 @@ function setupMap() {
         movingPlaneLayer
     ].forEach((group, index) => {
         group.eachLayer((layer) => {
-            if (index === 0) {
+            if (index === 0 && typeof layer.bringToBack === "function") {
                 layer.bringToBack();
-            } else {
+            } else if (typeof layer.bringToFront === "function") {
                 layer.bringToFront();
             }
         });
