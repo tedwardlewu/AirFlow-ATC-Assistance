@@ -699,6 +699,178 @@ function buildBridgeRoute(start, end) {
     return [start, end];
 }
 
+function getPointKey(point) {
+    return `${point[0].toFixed(7)},${point[1].toFixed(7)}`;
+}
+
+function connectGraphNodes(graphNodes, start, end) {
+    const startKey = getPointKey(start);
+    const endKey = getPointKey(end);
+
+    if (startKey === endKey) {
+        return;
+    }
+
+    const distance = Math.hypot(end[0] - start[0], end[1] - start[1]);
+
+    if (!distance) {
+        return;
+    }
+
+    const startNode = graphNodes.get(startKey) ?? { point: start, neighbors: new Map() };
+    const endNode = graphNodes.get(endKey) ?? { point: end, neighbors: new Map() };
+    const existingForward = startNode.neighbors.get(endKey);
+    const existingReverse = endNode.neighbors.get(startKey);
+
+    if (existingForward == null || distance < existingForward) {
+        startNode.neighbors.set(endKey, distance);
+    }
+
+    if (existingReverse == null || distance < existingReverse) {
+        endNode.neighbors.set(startKey, distance);
+    }
+
+    graphNodes.set(startKey, startNode);
+    graphNodes.set(endKey, endNode);
+}
+
+function buildPolylineGraph(lineGroups) {
+    const graphNodes = new Map();
+
+    lineGroups.forEach((linePoints) => {
+        for (let index = 0; index < linePoints.length - 1; index += 1) {
+            connectGraphNodes(graphNodes, linePoints[index], linePoints[index + 1]);
+        }
+    });
+
+    const graphNodeList = [...graphNodes.values()];
+
+    for (let leftIndex = 0; leftIndex < graphNodeList.length; leftIndex += 1) {
+        const leftNode = graphNodeList[leftIndex];
+
+        for (let rightIndex = leftIndex + 1; rightIndex < graphNodeList.length; rightIndex += 1) {
+            const rightNode = graphNodeList[rightIndex];
+
+            if (getPointDistanceSquared(leftNode.point, rightNode.point) <= 2.5e-10) {
+                connectGraphNodes(graphNodes, leftNode.point, rightNode.point);
+            }
+        }
+    }
+
+    return graphNodes;
+}
+
+function findShortestGraphPath(graphNodes, startKey, endKey) {
+    if (!graphNodes.has(startKey) || !graphNodes.has(endKey)) {
+        return null;
+    }
+
+    const frontier = [{ key: startKey, distance: 0 }];
+    const distances = new Map([[startKey, 0]]);
+    const previousKeys = new Map();
+    const visited = new Set();
+
+    while (frontier.length) {
+        frontier.sort((left, right) => left.distance - right.distance);
+        const current = frontier.shift();
+
+        if (!current || visited.has(current.key)) {
+            continue;
+        }
+
+        if (current.key === endKey) {
+            break;
+        }
+
+        visited.add(current.key);
+        const currentNode = graphNodes.get(current.key);
+
+        currentNode?.neighbors.forEach((weight, neighborKey) => {
+            if (visited.has(neighborKey)) {
+                return;
+            }
+
+            const nextDistance = current.distance + weight;
+
+            if (nextDistance >= (distances.get(neighborKey) ?? Infinity)) {
+                return;
+            }
+
+            distances.set(neighborKey, nextDistance);
+            previousKeys.set(neighborKey, current.key);
+            frontier.push({ key: neighborKey, distance: nextDistance });
+        });
+    }
+
+    if (!distances.has(endKey)) {
+        return null;
+    }
+
+    const pathKeys = [];
+    let currentKey = endKey;
+
+    while (currentKey) {
+        pathKeys.push(currentKey);
+
+        if (currentKey === startKey) {
+            break;
+        }
+
+        currentKey = previousKeys.get(currentKey);
+    }
+
+    if (pathKeys.at(-1) !== startKey) {
+        return null;
+    }
+
+    return pathKeys.reverse().map((key) => graphNodes.get(key)?.point).filter(Boolean);
+}
+
+function buildGraphRouteBetweenMatches(graphNodes, startMatch, endMatch) {
+    if (!graphNodes || !startMatch || !endMatch) {
+        return null;
+    }
+
+    const startEndpoints = [
+        startMatch.linePoints[startMatch.segmentIndex],
+        startMatch.linePoints[startMatch.segmentIndex + 1]
+    ];
+    const endEndpoints = [
+        endMatch.linePoints[endMatch.segmentIndex],
+        endMatch.linePoints[endMatch.segmentIndex + 1]
+    ];
+    let bestRoute = null;
+
+    startEndpoints.forEach((startEndpoint) => {
+        endEndpoints.forEach((endEndpoint) => {
+            const graphPath = findShortestGraphPath(
+                graphNodes,
+                getPointKey(startEndpoint),
+                getPointKey(endEndpoint)
+            );
+
+            if (!graphPath?.length) {
+                return;
+            }
+
+            const route = dedupeRoutePoints([
+                startMatch.projectedPoint,
+                startEndpoint,
+                ...graphPath,
+                endEndpoint,
+                endMatch.projectedPoint
+            ]);
+            const distance = measurePolylineLength(route);
+
+            if (!bestRoute || distance < bestRoute.distance) {
+                bestRoute = { route, distance };
+            }
+        });
+    });
+
+    return bestRoute?.route ?? null;
+}
+
 function getBestLineMatch(origin, entry) {
     const linePoints = getLinePoints(entry);
 
@@ -783,51 +955,40 @@ function buildRunwayDepartureRoute(runwayMatch) {
     };
 }
 
-function buildTaxiRouteToRunway(origin, taxiwayLines, runwayEntries, runwayPreference = 0) {
-    let bestOption = null;
+function buildTaxiRouteToRunway(origin, taxiwayLines, runwayEntries, surfaceRouteGraph, runwayPreference = 0) {
+    const routeOptions = [];
+    const runwayMatches = findLineMatches(origin, runwayEntries);
 
     findLineMatches(origin, taxiwayLines)
-        .slice(0, 12)
+        .slice(0, 8)
         .forEach((taxiMatch) => {
-            const candidateTaxiRoutes = [
-                [taxiMatch.projectedPoint, ...taxiMatch.linePoints.slice(taxiMatch.segmentIndex + 1)],
-                [taxiMatch.projectedPoint, ...taxiMatch.linePoints.slice(0, taxiMatch.segmentIndex + 1).reverse()]
-            ].map((route) => dedupeRoutePoints(route)).filter((route) => route.length > 1);
-
-            candidateTaxiRoutes.forEach((taxiRoute) => {
-                const taxiEndpoint = taxiRoute.at(-1);
-                const runwayMatches = findLineMatches(taxiEndpoint, runwayEntries);
-
-                if (!runwayMatches.length) {
-                    return;
-                }
-
-                const runwayPoolSize = Math.max(1, Math.min(runwayMatches.length, 2));
-                const runwayMatch = runwayMatches[Math.min(runwayPreference % runwayPoolSize, runwayMatches.length - 1)];
+            runwayMatches.forEach((runwayMatch) => {
+                const taxiRoute = buildGraphRouteBetweenMatches(surfaceRouteGraph, taxiMatch, runwayMatch);
                 const runwayDeparture = buildRunwayDepartureRoute(runwayMatch);
 
-                if (!runwayDeparture) {
+                if (!taxiRoute?.length || !runwayDeparture) {
                     return;
                 }
 
-                const taxiBridgePenalty = taxiMatch.distanceSquared * 3500;
-                const runwayBridgePenalty = runwayMatch.distanceSquared * 6000;
-                const score = taxiBridgePenalty + runwayBridgePenalty + (measurePolylineLength(taxiRoute) * 0.12);
-
-                if (!bestOption || score < bestOption.score) {
-                    bestOption = {
-                        score,
-                        taxiMatch,
-                        taxiRoute,
-                        runwayMatch,
-                        runwayRoute: runwayDeparture.route,
-                        runwayName: runwayDeparture.runwayName
-                    };
-                }
+                routeOptions.push({
+                    score: (taxiMatch.distanceSquared * 3500) + (measurePolylineLength(taxiRoute) * 0.12),
+                    taxiMatch,
+                    taxiRoute,
+                    runwayMatch,
+                    runwayRoute: runwayDeparture.route,
+                    runwayName: runwayDeparture.runwayName
+                });
             });
         });
 
-    return bestOption;
+    if (!routeOptions.length) {
+        return null;
+    }
+
+    routeOptions.sort((left, right) => left.score - right.score);
+
+    const routePoolSize = Math.max(1, Math.min(routeOptions.length, 2));
+    return routeOptions[Math.min(runwayPreference % routePoolSize, routeOptions.length - 1)];
 }
 
 function getRouteProgressForPoint(routeProfile, point) {
@@ -880,7 +1041,7 @@ function getHoldProgress(routeProfile, holdEntries, runwayStart) {
     return Math.max(Math.min(bestHold.progress - 0.006, runwayStart - 0.008), 0.05);
 }
 
-function buildDepartureRoute(origin, parkingEntries, taxiwayLines, runwayEntries, holdEntries, runwayPreference = 0, reservedParkingIds = new Set()) {
+function buildDepartureRoute(origin, parkingEntries, taxiwayLines, runwayEntries, holdEntries, surfaceRouteGraph, runwayPreference = 0, reservedParkingIds = new Set()) {
     const parkingMatches = findLineMatches(origin, parkingEntries);
     const parkingMatch = parkingMatches.find((match) => !reservedParkingIds.has(match.entry.id))
         ?? parkingMatches[0]
@@ -897,19 +1058,17 @@ function buildDepartureRoute(origin, parkingEntries, taxiwayLines, runwayEntries
     }
 
     const parkingConnector = parkingRoute.at(-1);
-    const taxiSelection = buildTaxiRouteToRunway(parkingConnector, taxiwayLines, runwayEntries, runwayPreference);
+    const taxiSelection = buildTaxiRouteToRunway(parkingConnector, taxiwayLines, runwayEntries, surfaceRouteGraph, runwayPreference);
 
     if (!taxiSelection) {
         return null;
     }
 
     const taxiJoinRoute = buildBridgeRoute(parkingConnector, taxiSelection.taxiMatch.projectedPoint);
-    const runwayJoinRoute = buildBridgeRoute(taxiSelection.taxiRoute.at(-1), taxiSelection.runwayMatch.projectedPoint);
     const route = dedupeRoutePoints([
         ...parkingRoute,
         ...taxiJoinRoute,
         ...taxiSelection.taxiRoute,
-        ...runwayJoinRoute,
         ...taxiSelection.runwayRoute
     ]);
     const totalLength = measurePolylineLength(route);
@@ -922,8 +1081,7 @@ function buildDepartureRoute(origin, parkingEntries, taxiwayLines, runwayEntries
     const pushbackDistance = measurePolylineLength(parkingRoute);
     const runwayStartDistance = pushbackDistance
         + measurePolylineLength(taxiJoinRoute)
-        + measurePolylineLength(taxiSelection.taxiRoute)
-        + measurePolylineLength(runwayJoinRoute);
+        + measurePolylineLength(taxiSelection.taxiRoute);
     const runwayStart = Math.min(runwayStartDistance / totalLength, 0.98);
     const holdProgress = getHoldProgress(routeProfile, holdEntries, runwayStart);
 
@@ -977,6 +1135,51 @@ function getMinimumPlaneSpacingSquared(plane) {
     }
 
     return 8e-8;
+}
+
+function resolvePlaneSpacing(plane, resolvedPositions, fallbackProgress) {
+    const minimumSpacingSquared = getMinimumPlaneSpacingSquared(plane);
+    let resolvedProgress = plane.progress;
+    let resolvedPosition = interpolateRouteProfile(plane.routeProfile, resolvedProgress);
+    let attempts = 0;
+
+    while (attempts < 24) {
+        const blockingPlane = resolvedPositions.find((entry) => {
+            const spacingThreshold = Math.max(minimumSpacingSquared, entry.minimumSpacingSquared);
+            return getLatLngDistanceSquared(resolvedPosition, entry.position) < spacingThreshold;
+        });
+
+        if (!blockingPlane) {
+            return {
+                progress: resolvedProgress,
+                position: resolvedPosition,
+                minimumSpacingSquared
+            };
+        }
+
+        const nextProgress = Math.max(
+            0,
+            Math.min(
+                resolvedProgress - 0.003,
+                fallbackProgress,
+                blockingPlane.progress - 0.003
+            )
+        );
+
+        if (nextProgress >= resolvedProgress - 1e-6) {
+            break;
+        }
+
+        resolvedProgress = nextProgress;
+        resolvedPosition = interpolateRouteProfile(plane.routeProfile, resolvedProgress);
+        attempts += 1;
+    }
+
+    return {
+        progress: resolvedProgress,
+        position: resolvedPosition,
+        minimumSpacingSquared
+    };
 }
 
 function buildTaxiwayPlaneRoute(origin, taxiwayLines) {
@@ -1365,6 +1568,11 @@ function setupMap() {
     });
 
     if (taxiwayLineSets.length) {
+        const surfaceRouteGraph = buildPolylineGraph([
+            ...taxiwayLineSets,
+            ...runwayLineSets.map((entry) => entry.linePoints)
+        ]);
+
         registerScalableLayer(L.polyline(taxiwayLineSets, {
             color: "#111111",
             opacity: 0.84,
@@ -1387,7 +1595,7 @@ function setupMap() {
         const animatedPlanes = taxiPlaneFeed.map((plane, index) => {
             const gate = gateMarkers.find((gateMarker) => gateMarker.name.endsWith(plane.gate));
             const departureRoute = gate
-                ? buildDepartureRoute(gate.coords, parkingLineSets, taxiwayLineSets, runwayLineSets, holdLineSets, index, reservedParkingIds)
+                ? buildDepartureRoute(gate.coords, parkingLineSets, taxiwayLineSets, runwayLineSets, holdLineSets, surfaceRouteGraph, index, reservedParkingIds)
                 : null;
             const route = departureRoute?.route ?? null;
             const routeProfile = route ? createRouteProfile(route) : null;
@@ -1493,23 +1701,19 @@ function setupMap() {
                         plane.holdStartedAt = null;
                     }
 
-                    let position = interpolateRouteProfile(plane.routeProfile, plane.progress);
-                    const minimumSpacingSquared = getMinimumPlaneSpacingSquared(plane);
-                    const tooCloseToAnotherPlane = resolvedPositions.some((entry) => {
-                        const spacingThreshold = Math.max(minimumSpacingSquared, entry.minimumSpacingSquared);
-                        return getLatLngDistanceSquared(position, entry.position) < spacingThreshold;
-                    });
-
-                    if (tooCloseToAnotherPlane) {
-                        plane.progress = previousProgress;
-                        position = interpolateRouteProfile(plane.routeProfile, plane.progress);
-                    }
+                    const spacingResolution = resolvePlaneSpacing(plane, resolvedPositions, previousProgress);
+                    plane.progress = spacingResolution.progress;
+                    const position = spacingResolution.position;
 
                     if (isPlaneOnRunway(plane)) {
                         occupiedRunways.add(plane.runwayName);
                     }
 
-                    resolvedPositions.push({ position, minimumSpacingSquared });
+                    resolvedPositions.push({
+                        position,
+                        progress: plane.progress,
+                        minimumSpacingSquared: spacingResolution.minimumSpacingSquared
+                    });
                     const heading = getPathHeading(plane.routeProfile, plane.progress, plane.direction);
                     plane.marker.setLatLng(position);
                     plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, heading, map.getZoom()));
