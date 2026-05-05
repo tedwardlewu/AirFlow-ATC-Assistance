@@ -1117,52 +1117,144 @@ function isPlaneOnRunway(plane) {
     return plane.progress >= plane.runwayStart && plane.progress < 0.995;
 }
 
+function convertMetersToDistanceSquared(meters) {
+    return (meters / 111320) ** 2;
+}
+
+const planeSpacingMetersByPhase = {
+    pushback: 68,
+    taxi: 92,
+    lineup: 135,
+    runway: 165
+};
+
+function getPlaneSpacingMeters(plane) {
+    if (plane.progress < plane.pushbackEnd) {
+        return planeSpacingMetersByPhase.pushback;
+    }
+
+    if (plane.progress < plane.holdProgress) {
+        return planeSpacingMetersByPhase.taxi;
+    }
+
+    if (plane.progress < plane.runwayStart) {
+        return planeSpacingMetersByPhase.lineup;
+    }
+
+    return planeSpacingMetersByPhase.runway;
+}
+
 function getRunwayHoldProgress(plane) {
     return Math.max(plane.holdProgress, plane.pushbackEnd + 0.01);
 }
 
+function getRunwayDepartureLeaders(planes) {
+    return planes.reduce((leaders, plane) => {
+        if (plane.progress < plane.holdProgress || plane.progress >= 1) {
+            return leaders;
+        }
+
+        const currentLeader = leaders.get(plane.runwayName);
+
+        if (!currentLeader) {
+            leaders.set(plane.runwayName, plane);
+            return leaders;
+        }
+
+        if (isPlaneOnRunway(plane) && !isPlaneOnRunway(currentLeader)) {
+            leaders.set(plane.runwayName, plane);
+            return leaders;
+        }
+
+        if (!isPlaneOnRunway(plane) && isPlaneOnRunway(currentLeader)) {
+            return leaders;
+        }
+
+        if (plane.progress > currentLeader.progress) {
+            leaders.set(plane.runwayName, plane);
+        }
+
+        return leaders;
+    }, new Map());
+}
+
 function getMinimumPlaneSpacingSquared(plane) {
-    if (plane.progress < plane.pushbackEnd) {
-        return 3.5e-8;
+    return convertMetersToDistanceSquared(getPlaneSpacingMeters(plane));
+}
+
+function getBlockingPlane(position, minimumSpacingSquared, resolvedPositions) {
+    return resolvedPositions.find((entry) => {
+        const spacingThreshold = Math.max(minimumSpacingSquared, entry.minimumSpacingSquared);
+        return getLatLngDistanceSquared(position, entry.position) < spacingThreshold;
+    }) ?? null;
+}
+
+function getQueueSpacingProgress(plane) {
+    const routeLength = Math.max(plane.routeProfile.totalLength, 1e-6);
+    return getPlaneSpacingMeters(plane) / 111320 / routeLength;
+}
+
+function getSameRunwayQueueBlocker(plane, resolvedPositions) {
+    if (plane.progress >= plane.runwayStart) {
+        return null;
     }
 
-    if (plane.progress < plane.holdProgress) {
-        return 5e-8;
-    }
-
-    if (plane.progress < plane.runwayStart) {
-        return 6.5e-8;
-    }
-
-    return 8e-8;
+    return resolvedPositions.find((entry) => {
+        return entry.runwayName === plane.runwayName
+            && entry.progress >= plane.progress
+            && entry.progress < plane.runwayStart;
+    }) ?? null;
 }
 
 function resolvePlaneSpacing(plane, resolvedPositions, fallbackProgress) {
     const minimumSpacingSquared = getMinimumPlaneSpacingSquared(plane);
+    const queueSpacingProgress = getQueueSpacingProgress(plane);
+    const queueBlocker = getSameRunwayQueueBlocker(plane, resolvedPositions);
     let resolvedProgress = plane.progress;
+
+    if (queueBlocker) {
+        resolvedProgress = Math.min(resolvedProgress, Math.max(queueBlocker.progress - queueSpacingProgress, 0));
+    }
+
     let resolvedPosition = interpolateRouteProfile(plane.routeProfile, resolvedProgress);
-    let attempts = 0;
+    let blockingPlane = getBlockingPlane(resolvedPosition, minimumSpacingSquared, resolvedPositions);
 
-    while (attempts < 24) {
-        const blockingPlane = resolvedPositions.find((entry) => {
-            const spacingThreshold = Math.max(minimumSpacingSquared, entry.minimumSpacingSquared);
-            return getLatLngDistanceSquared(resolvedPosition, entry.position) < spacingThreshold;
-        });
+    if (!blockingPlane) {
+        return {
+            progress: resolvedProgress,
+            position: resolvedPosition,
+            minimumSpacingSquared
+        };
+    }
 
-        if (!blockingPlane) {
-            return {
-                progress: resolvedProgress,
-                position: resolvedPosition,
-                minimumSpacingSquared
-            };
-        }
+    resolvedProgress = Math.max(0, Math.min(fallbackProgress, plane.progress));
 
+    if (queueBlocker) {
+        resolvedProgress = Math.min(resolvedProgress, Math.max(queueBlocker.progress - queueSpacingProgress, 0));
+    }
+
+    resolvedPosition = interpolateRouteProfile(plane.routeProfile, resolvedProgress);
+    blockingPlane = getBlockingPlane(resolvedPosition, minimumSpacingSquared, resolvedPositions);
+
+    if (!blockingPlane) {
+        return {
+            progress: resolvedProgress,
+            position: resolvedPosition,
+            minimumSpacingSquared
+        };
+    }
+
+    const routeLength = Math.max(plane.routeProfile.totalLength, 1e-6);
+    const progressStep = Math.max(18 / 111320 / routeLength, 0.00035);
+
+    for (let attempts = 0; attempts < 24; attempts += 1) {
         const nextProgress = Math.max(
             0,
             Math.min(
-                resolvedProgress - 0.003,
+                resolvedProgress - progressStep,
                 fallbackProgress,
-                blockingPlane.progress - 0.003
+                blockingPlane.progress - (progressStep * 1.5),
+                queueBlocker ? queueBlocker.progress - queueSpacingProgress : resolvedProgress - progressStep
             )
         );
 
@@ -1172,7 +1264,12 @@ function resolvePlaneSpacing(plane, resolvedPositions, fallbackProgress) {
 
         resolvedProgress = nextProgress;
         resolvedPosition = interpolateRouteProfile(plane.routeProfile, resolvedProgress);
-        attempts += 1;
+
+        blockingPlane = getBlockingPlane(resolvedPosition, minimumSpacingSquared, resolvedPositions);
+
+        if (!blockingPlane) {
+            break;
+        }
     }
 
     return {
@@ -1630,7 +1727,7 @@ function setupMap() {
                 lineupSpeed: Math.max(plane.speed * 0.34, 0.0014),
                 runwaySpeed: Math.max(plane.speed * 5.2, 0.031),
                 takeoffAcceleration: Math.max(plane.speed * 9.5, 0.13),
-                holdDelayMs: 2400 + (index * 320),
+                holdDelayMs: 350 + (index * 40),
                 holdStartedAt: null,
                 progress: initialProgress,
                 direction: initialDirection
@@ -1656,6 +1753,7 @@ function setupMap() {
 
                 const deltaSeconds = (timestamp - lastTimestamp) / 1000;
                 lastTimestamp = timestamp;
+                const runwayDepartureLeaders = getRunwayDepartureLeaders(animatedPlanes);
 
                 const occupiedRunways = new Set(
                     animatedPlanes
@@ -1668,6 +1766,8 @@ function setupMap() {
                     .sort((left, right) => right.progress - left.progress)
                     .forEach((plane) => {
                     const previousProgress = plane.progress;
+                    const runwayDepartureLeader = runwayDepartureLeaders.get(plane.runwayName);
+                    let didWrapToRouteStart = false;
                     let nextProgress = plane.progress + (deltaSeconds * getDepartureSpeed(plane) * plane.direction);
 
                     if (
@@ -1687,23 +1787,35 @@ function setupMap() {
                         plane.progress >= plane.holdProgress
                         && plane.progress < plane.runwayStart
                     ) {
-                        const isWaitingForClearance = occupiedRunways.has(plane.runwayName)
-                            || plane.holdStartedAt == null
-                            || (timestamp - plane.holdStartedAt) < plane.holdDelayMs;
+                        const isWaitingForClearance = (runwayDepartureLeader && runwayDepartureLeader !== plane)
+                            || occupiedRunways.has(plane.runwayName)
+                            || plane.holdStartedAt == null;
 
                         if (isWaitingForClearance) {
-                            plane.progress = plane.holdProgress;
+                            plane.progress = getRunwayHoldProgress(plane);
                         }
                     }
 
                     if (plane.progress >= 1) {
                         plane.progress = 0;
                         plane.holdStartedAt = null;
+                        didWrapToRouteStart = true;
                     }
 
-                    const spacingResolution = resolvePlaneSpacing(plane, resolvedPositions, previousProgress);
-                    plane.progress = spacingResolution.progress;
-                    const position = spacingResolution.position;
+                    const spacingFallbackProgress = didWrapToRouteStart ? plane.progress : previousProgress;
+                    const spacingResolution = resolvePlaneSpacing(plane, resolvedPositions, spacingFallbackProgress);
+                    const isSpacingBlocked = !didWrapToRouteStart
+                        && spacingResolution.progress < (previousProgress - 1e-6);
+
+                    if (isSpacingBlocked) {
+                        plane.progress = previousProgress;
+                    } else {
+                        plane.progress = spacingResolution.progress;
+                    }
+
+                    const position = isSpacingBlocked
+                        ? interpolateRouteProfile(plane.routeProfile, plane.progress)
+                        : spacingResolution.position;
 
                     if (isPlaneOnRunway(plane)) {
                         occupiedRunways.add(plane.runwayName);
@@ -1712,6 +1824,7 @@ function setupMap() {
                     resolvedPositions.push({
                         position,
                         progress: plane.progress,
+                        runwayName: plane.runwayName,
                         minimumSpacingSquared: spacingResolution.minimumSpacingSquared
                     });
                     const heading = getPathHeading(plane.routeProfile, plane.progress, plane.direction);
