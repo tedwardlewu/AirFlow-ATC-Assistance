@@ -311,6 +311,116 @@ body::after {
     z-index: 1;
 }
 
+.plane-side-panel {
+    position: absolute;
+    top: 118px;
+    left: 18px;
+    bottom: 18px;
+    width: min(320px, calc(100% - 36px));
+    z-index: 21;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border-radius: 18px;
+    background: linear-gradient(180deg, rgba(7, 10, 14, 0.94), rgba(12, 17, 23, 0.94));
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    box-shadow: 0 18px 38px rgba(0, 0, 0, 0.34);
+    backdrop-filter: blur(18px);
+}
+
+.plane-side-panel-header strong,
+.plane-control-card strong {
+    display: block;
+}
+
+.plane-side-panel-header strong {
+    margin: 2px 0 4px;
+    font-size: 1rem;
+}
+
+.plane-side-panel-header small,
+.plane-control-card small {
+    color: var(--muted);
+}
+
+.plane-search-field {
+    display: grid;
+    gap: 6px;
+}
+
+.plane-search-field input {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text);
+    font: inherit;
+    outline: none;
+}
+
+.plane-search-field input::placeholder {
+    color: rgba(237, 242, 247, 0.42);
+}
+
+.plane-search-field input:focus {
+    border-color: rgba(119, 183, 234, 0.42);
+    box-shadow: 0 0 0 3px rgba(119, 183, 234, 0.14);
+}
+
+.plane-side-panel-list {
+    display: grid;
+    gap: 10px;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.plane-side-panel-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+.plane-side-panel-list::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.14);
+    border-radius: 999px;
+}
+
+.plane-control-card {
+    padding: 12px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.plane-control-empty {
+    padding: 14px;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px dashed rgba(255, 255, 255, 0.08);
+    color: var(--muted);
+    font-size: 0.84rem;
+}
+
+.plane-control-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 4px;
+}
+
+.plane-control-status {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: rgba(119, 183, 234, 0.14);
+    color: #cfe4ff;
+    font-size: 0.68rem;
+    line-height: 1;
+    white-space: nowrap;
+}
+
 .leaflet-container {
     background: #9fa9b5;
     font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
@@ -367,6 +477,116 @@ body::after {
 
 .leaflet-popup-content {
     margin: 10px 12px;
+}
+
+.plane-control-popup {
+    min-width: 172px;
+    padding: 2px 0;
+}
+
+.plane-control-popup strong,
+.plane-control-popup small {
+    display: block;
+}
+
+.plane-control-popup strong {
+    margin-bottom: 2px;
+    font-size: 0.86rem;
+    line-height: 1.15;
+}
+
+.plane-control-popup small {
+    font-size: 0.68rem;
+    line-height: 1.25;
+    color: rgba(237, 242, 247, 0.7);
+}
+
+.plane-control-popup-shell .leaflet-popup-content-wrapper {
+    background: linear-gradient(180deg, rgba(7, 10, 14, 0.98), rgba(12, 17, 23, 0.98));
+    border: 1px solid rgba(143, 196, 236, 0.14);
+    box-shadow: 0 16px 32px rgba(0, 0, 0, 0.42);
+}
+
+.plane-control-popup-shell .leaflet-popup-tip {
+    background: rgba(12, 17, 23, 0.98);
+}
+
+.plane-control-popup-shell .leaflet-popup-content {
+    margin: 8px 9px;
+}
+
+.plane-runway-selector {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin: 7px 0 5px;
+}
+
+.plane-runway-button {
+    padding: 4px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+.plane-action-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin: 4px 0 5px;
+}
+    font: inherit;
+    font-size: 0.71rem;
+    line-height: 1.1;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.plane-runway-button:hover {
+    background: rgba(119, 183, 234, 0.18);
+    border-color: rgba(119, 183, 234, 0.4);
+    transform: translateY(-1px);
+}
+
+.plane-runway-button.active {
+    background: rgba(255, 148, 95, 0.2);
+    border-color: rgba(255, 148, 95, 0.45);
+    color: #ffe4d6;
+}
+
+.plane-action-button {
+    width: 100%;
+    margin: 3px 0 6px;
+    padding: 5px 8px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.71rem;
+    line-height: 1.1;
+    cursor: pointer;
+    transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.plane-action-button:hover {
+    transform: translateY(-1px);
+}
+
+.plane-action-button.abort {
+    background: rgba(214, 76, 76, 0.14);
+    border-color: rgba(214, 76, 76, 0.34);
+    color: #ffd7d7;
+}
+
+.plane-action-button.abort:hover {
+    background: rgba(214, 76, 76, 0.22);
+    border-color: rgba(214, 76, 76, 0.48);
+}
+
+.plane-control-hint {
+    font-size: 0.64rem;
+    line-height: 1.25;
+    color: rgba(237, 242, 247, 0.56);
 }
 
 .route-line {
@@ -691,6 +911,10 @@ body::after {
         justify-content: flex-start;
         max-width: none;
     }
+
+    .plane-side-panel {
+        width: min(280px, calc(100% - 36px));
+    }
 }
 
 @media (max-width: 800px) {
@@ -753,6 +977,15 @@ body::after {
     .map-callout {
         min-width: auto;
         max-width: 58%;
+    }
+
+    .plane-side-panel {
+        top: auto;
+        right: 12px;
+        left: 12px;
+        bottom: 12px;
+        width: auto;
+        max-height: 42vh;
     }
 
     .nav-tip {

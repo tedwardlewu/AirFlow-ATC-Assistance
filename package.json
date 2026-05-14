@@ -4,7 +4,8 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "dev": "vite"
+    "dev": "vite --open /Index.html",
+    "build": "vite build"
   },
   "devDependencies": {
     "leaflet": "^1.9.4",
