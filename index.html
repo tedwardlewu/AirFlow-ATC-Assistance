@@ -28,13 +28,10 @@
 
         <main class="dashboard-grid">
             <section class="hero-card overview-card">
-                <div class="map-overlay-top">
-                    <div class="map-heading">
-                        <p class="eyebrow">Surface Map</p>
-                        <h2>Interactive Airport Overview</h2>
-                        <p>Realistic YUL surface layout with KML-derived runways, taxiways, roads, holds, center lines, and parking guidance.</p>
-                    </div>
-                    <div class="legend map-legend">
+                <div class="map-stage">
+                    <div id="airport-map" aria-label="Interactive Montreal-Trudeau airport map"></div>
+
+                    <div class="legend map-legend map-legend-overlay" aria-label="Map legend">
                         <span class="legend-chip"><i class="legend-swatch runway"></i> Runways</span>
                         <span class="legend-chip"><i class="legend-swatch taxiway"></i> Taxiways</span>
                         <span class="legend-chip"><i class="legend-swatch centerline"></i> Center Lines</span>
@@ -42,10 +39,6 @@
                         <span class="legend-chip"><i class="legend-swatch road-line"></i> Roads</span>
                         <span class="legend-chip"><i class="legend-swatch kml"></i> Parking Lines</span>
                     </div>
-                </div>
-
-                <div class="map-stage">
-                    <div id="airport-map" aria-label="Interactive Montreal-Trudeau airport map"></div>
 
                     <aside class="plane-side-panel" aria-label="Plane controls">
                         <div class="plane-side-panel-header">
@@ -125,6 +118,7 @@
                     <div>
                         <p class="eyebrow">Movement Board</p>
                         <h2>Flight Information</h2>
+                        <p class="section-subtitle">Active movement snapshots with route, stand, and timing context.</p>
                     </div>
                 </div>
                 <div class="table-list" id="flight-table"></div>
@@ -135,6 +129,7 @@
                     <div>
                         <p class="eyebrow">Terminal Coordination</p>
                         <h2>Gates and Stands</h2>
+                        <p class="section-subtitle">Stand state, assigned carrier, and turnaround notes in one place.</p>
                     </div>
                 </div>
                 <div class="gate-grid" id="gate-grid"></div>
@@ -145,6 +140,7 @@
                     <div>
                         <p class="eyebrow">Ramp Network</p>
                         <h2>Ground Vehicles</h2>
+                        <p class="section-subtitle">Operational units, live tasking, and current ramp positions.</p>
                     </div>
                 </div>
                 <div class="vehicle-list" id="vehicle-list"></div>
@@ -155,6 +151,7 @@
                     <div>
                         <p class="eyebrow">Tower Notes</p>
                         <h2>Traffic and Advisories</h2>
+                        <p class="section-subtitle">Sequencing notes and flow alerts highlighted by severity.</p>
                     </div>
                 </div>
                 <div class="advisory-stack" id="advisory-stack"></div>

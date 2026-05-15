@@ -1,4 +1,6 @@
 
+import { WeightedMajorAirlines } from "./AirlineCatalog.js";
+
 export const CommercialJetModels = [
     "Airbus A220-100",
     "Airbus A220-300",
@@ -66,9 +68,12 @@ export function CreateDeterministicModelOrder(models, seed = 37) {
 
 export function AssignAircraftModels(planes, models = CommercialJetModels) {
     const orderedModels = CreateDeterministicModelOrder(models);
+    const orderedAirlines = CreateDeterministicModelOrder(WeightedMajorAirlines, 53);
 
     return planes.map((plane, index) => ({
         ...plane,
-        aircraftModel: orderedModels[index % orderedModels.length]
+        aircraftModel: orderedModels[index % orderedModels.length],
+        airlineName: orderedAirlines[index % orderedAirlines.length].name,
+        airlineCode: orderedAirlines[index % orderedAirlines.length].code
     }));
 }

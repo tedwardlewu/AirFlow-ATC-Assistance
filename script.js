@@ -2,7 +2,22 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import montrealYulKml from "./Media/Montreal YUL.kml?raw";
 import planeLogo from "./Media/Plane Logo.png";
+import { MajorAirlines } from "./AirlineCatalog.js";
 import { AssignAircraftModels } from "./AircraftCatalog.js";
+
+const airlineLogoModules = import.meta.glob("./Media/*.{png,jpg,jpeg,webp,svg}", {
+    eager: true,
+    import: "default"
+});
+
+const airlineLogoUrlByFile = Object.fromEntries(
+    Object.entries(airlineLogoModules).map(([modulePath, assetUrl]) => [
+        modulePath.split("/").at(-1),
+        assetUrl
+    ])
+);
+
+const airlineDetailsByCode = new Map(MajorAirlines.map((airline) => [airline.code, airline]));
 
 const flightFeed = [
     { callsign: "ACA430", route: "YYZ -> YUL", status: "Taxi to 24R", gate: "52", eta: "12:08Z" },
@@ -387,8 +402,8 @@ function getCategoryPresentation(category, style) {
     const presentations = {
         runways: {
             label: "Runways",
-            color: "#c62828",
-            fillColor: "#c62828",
+            color: "#c3d0db",
+            fillColor: "#c3d0db",
             pointRadius: 4,
             lineWeight: 7,
             lineCap: "butt",
@@ -396,8 +411,8 @@ function getCategoryPresentation(category, style) {
         },
         taxiways: {
             label: "Taxiways",
-            color: "#dcbf19",
-            fillColor: "#dcbf19",
+            color: "#c79b48",
+            fillColor: "#c79b48",
             pointRadius: 3,
             lineWeight: 3.5,
             lineCap: "round",
@@ -414,8 +429,8 @@ function getCategoryPresentation(category, style) {
         },
         roads: {
             label: "Roads",
-            color: "#f57c00",
-            fillColor: "#f57c00",
+            color: "#b56d24",
+            fillColor: "#b56d24",
             pointRadius: 4,
             lineWeight: 3,
             lineCap: "round",
@@ -423,17 +438,17 @@ function getCategoryPresentation(category, style) {
         },
         centerlines: {
             label: "Center Lines",
-            color: "#111111",
-            fillColor: "#111111",
+            color: "#000000",
+            fillColor: "#000000",
             pointRadius: 3,
-            lineWeight: 2.5,
-            lineCap: "round",
+            lineWeight: 3.25,
+            lineCap: "butt",
             lineJoin: "round"
         },
         other: {
             label: "Parking Lines",
-            color: "#1e88e5",
-            fillColor: "#1e88e5",
+            color: "#4e94b8",
+            fillColor: "#4e94b8",
             pointRadius: 3,
             lineWeight: 2.25,
             lineCap: "butt",
@@ -485,20 +500,17 @@ function renderFlights() {
     const flightTable = document.getElementById("flight-table");
     flightTable.innerHTML = flightFeed.map((flight) => `
         <article class="table-row">
-            <div>
+            <div class="table-row-main">
                 <span class="table-head">Callsign</span>
                 <strong>${flight.callsign}</strong>
+                <small class="mono">${flight.route}</small>
             </div>
-            <div>
-                <span class="table-head">Route</span>
-                <span>${flight.route}</span>
-            </div>
-            <div>
+            <div class="table-row-block">
                 <span class="table-head">Status</span>
-                <small>${flight.status}</small>
+                <strong class="table-inline-value">${flight.status}</strong>
             </div>
-            <div>
-                <span class="table-head">Gate / ETA</span>
+            <div class="table-row-block table-row-block-end">
+                <span class="table-head">Gate</span>
                 <strong>${flight.gate}</strong>
                 <small class="mono">${flight.eta}</small>
             </div>
@@ -511,9 +523,12 @@ function renderGates() {
     gateGrid.innerHTML = gateFeed.map((gate) => `
         <article class="gate-card">
             <span class="status-label">Gate ${gate.gate}</span>
-            <strong>${gate.carrier} · ${gate.aircraft}</strong>
-            <small>${gate.state}</small>
-            <p class="mono">${gate.notes}</p>
+            <strong>${gate.carrier}</strong>
+            <small class="gate-aircraft">${gate.aircraft}</small>
+            <div class="gate-card-footer">
+                <span class="gate-state-pill">${gate.state}</span>
+                <small class="mono">${gate.notes}</small>
+            </div>
         </article>
     `).join("");
 }
@@ -522,12 +537,13 @@ function renderVehicles() {
     const vehicleList = document.getElementById("vehicle-list");
     vehicleList.innerHTML = vehicleFeed.map((vehicle) => `
         <article class="vehicle-card">
-            <div>
+            <div class="vehicle-card-main">
                 <span class="status-label">${vehicle.id}</span>
                 <strong>${vehicle.role}</strong>
                 <small>${vehicle.task}</small>
             </div>
             <div class="vehicle-meta">
+                <span class="status-label">Current Zone</span>
                 <strong>${vehicle.zone}</strong>
                 <small class="mono">${vehicle.eta}</small>
             </div>
@@ -539,7 +555,7 @@ function renderAdvisories() {
     const advisoryStack = document.getElementById("advisory-stack");
     advisoryStack.innerHTML = advisoryFeed.map((advisory) => `
         <article class="advisory-card">
-            <div>
+            <div class="advisory-card-main">
                 <span class="status-label">Advisory</span>
                 <strong>${advisory.title}</strong>
                 <small>${advisory.detail}</small>
@@ -1706,67 +1722,24 @@ function setupMap() {
         zoomSnap: 0.25,
         zoomAnimation: true,
         fadeAnimation: true,
-        markerZoomAnimation: true
+        markerZoomAnimation: true,
+        preferCanvas: true
     }).setView(airportCenter, 14);
 
-    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}", {
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}", {
         attribution: "Tiles &copy; Esri",
         keepBuffer: 3,
-        updateWhenZooming: true
+        updateWhenZooming: true,
+        className: "atc-dark-basemap"
     }).addTo(map);
 
-    map.createPane("airportImagery");
-    const airportImageryPane = map.getPane("airportImagery");
-    airportImageryPane.style.zIndex = "260";
-    airportImageryPane.style.pointerEvents = "none";
-
-    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", {
+    L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}", {
         attribution: "Tiles &copy; Esri",
-        pane: "airportImagery",
-        bounds: airportImageryBounds,
-        maxNativeZoom: 18,
-        maxZoom: 19,
         keepBuffer: 3,
-        updateWhenZooming: true
+        updateWhenZooming: true,
+        pane: "overlayPane",
+        className: "atc-dark-reference"
     }).addTo(map);
-
-    function updateAirportImageryClip() {
-        const northWest = map.latLngToLayerPoint(airportImageryBounds[0]);
-        const southEast = map.latLngToLayerPoint(airportImageryBounds[1]);
-        const centerX = (northWest.x + southEast.x) / 2;
-        const centerY = (northWest.y + southEast.y) / 2;
-        const sideLength = Math.max(
-            Math.abs(southEast.x - northWest.x),
-            Math.abs(southEast.y - northWest.y)
-        );
-        const halfSide = sideLength / 2;
-        const heightScale = 1.12;
-        const rightExtension = sideLength * 0.5;
-        const leftExtension = sideLength * 0.22;
-        const left = centerX - halfSide - leftExtension;
-        const top = centerY - (halfSide * heightScale);
-        const right = centerX + halfSide + rightExtension;
-        const bottom = centerY + (halfSide * heightScale);
-
-        airportImageryPane.style.clipPath = `polygon(${left}px ${top}px, ${right}px ${top}px, ${right}px ${bottom}px, ${left}px ${bottom}px)`;
-    }
-
-    let clipFrame = 0;
-
-    function scheduleAirportImageryClip() {
-        if (clipFrame) {
-            return;
-        }
-
-        clipFrame = window.requestAnimationFrame(() => {
-            clipFrame = 0;
-            updateAirportImageryClip();
-        });
-    }
-
-    map.on("move zoom resize viewreset", scheduleAirportImageryClip);
-    map.on("moveend zoomend", updateAirportImageryClip);
-    updateAirportImageryClip();
 
     const kmlGroups = {
         runways: L.featureGroup().addTo(map),
@@ -1797,8 +1770,12 @@ function setupMap() {
     }
 
     function addOutlinedPolyline(targetLayer, linePoints, presentation, popupHtml) {
+        const renderLinePoints = presentation.label === "Center Lines"
+            ? extendPolylineEndpoints(linePoints, 0.8)
+            : linePoints;
+
         if (presentation.label === "Parking Lines") {
-            return registerScalableLayer(L.polyline(linePoints, {
+            return registerScalableLayer(L.polyline(renderLinePoints, {
                 color: presentation.color,
                 opacity: 0.88,
                 weight: presentation.lineWeight,
@@ -1810,7 +1787,7 @@ function setupMap() {
 
         const outlineWeight = presentation.lineWeight + (presentation.label === "Runways" ? 3 : 1.6);
 
-        registerScalableLayer(L.polyline(linePoints, {
+        registerScalableLayer(L.polyline(renderLinePoints, {
             color: "#111111",
             opacity: 0.92,
             weight: outlineWeight,
@@ -1821,7 +1798,7 @@ function setupMap() {
             ? { minScale: 0.16, minWeight: 1.15 }
             : undefined);
 
-        return registerScalableLayer(L.polyline(linePoints, {
+        return registerScalableLayer(L.polyline(renderLinePoints, {
             color: presentation.color,
             opacity: Math.max(presentation.label === "Center Lines" ? 0.92 : 0.7, 0.7),
             weight: presentation.lineWeight,
@@ -1846,6 +1823,27 @@ function setupMap() {
                 )
             });
         });
+    }
+
+    function extendPolylineEndpoints(linePoints, extensionRatio = 0.8) {
+        if (linePoints.length < 2) {
+            return linePoints;
+        }
+
+        const [firstLat, firstLng] = linePoints[0];
+        const [secondLat, secondLng] = linePoints[1];
+        const [lastLat, lastLng] = linePoints.at(-1);
+        const [preLastLat, preLastLng] = linePoints.at(-2);
+        const startExtension = [
+            firstLat + ((firstLat - secondLat) * extensionRatio),
+            firstLng + ((firstLng - secondLng) * extensionRatio)
+        ];
+        const endExtension = [
+            lastLat + ((lastLat - preLastLat) * extensionRatio),
+            lastLng + ((lastLng - preLastLng) * extensionRatio)
+        ];
+
+        return [startExtension, ...linePoints.slice(1, -1), endExtension];
     }
 
     yulKmlOverlay.placemarks.forEach((placemark) => {
@@ -1961,13 +1959,50 @@ function setupMap() {
             };
         }
 
+        function getAirlineBranding(plane) {
+            const airline = airlineDetailsByCode.get(plane.airlineCode);
+            const logoUrl = airline?.logoFile ? airlineLogoUrlByFile[airline.logoFile] : null;
+
+            return {
+                airlineName: plane.airlineName,
+                airlineCode: plane.airlineCode,
+                logoUrl,
+                logoScale: airline?.logoScale ?? 1.12
+            };
+        }
+
+        function createAirlineBadgeMarkup(plane) {
+            const branding = getAirlineBranding(plane);
+
+            if (branding.logoUrl) {
+                return `
+                    <span class="airline-badge" aria-label="${branding.airlineName} logo" style="--airline-logo-scale: ${branding.logoScale};">
+                        <img src="${branding.logoUrl}" alt="${branding.airlineName} logo" loading="lazy">
+                    </span>
+                `;
+            }
+
+            return `
+                <span class="airline-badge airline-badge-fallback" aria-label="${branding.airlineName}">
+                    <span>${branding.airlineCode}</span>
+                </span>
+            `;
+        }
+
         function createPlaneControlPopupContent(plane) {
             const controls = createPlaneActionMarkup(plane);
+            const airlineBadge = createAirlineBadgeMarkup(plane);
 
             return `
                 <div class="plane-control-popup" data-plane="${plane.callsign}">
                     <strong>${plane.callsign}</strong>
-                    <small>${plane.aircraftModel}</small>
+                    <div class="plane-airline-row">
+                        ${airlineBadge}
+                        <div class="plane-airline-meta">
+                            <small>${plane.airlineName}</small>
+                            <small>${plane.aircraftModel}</small>
+                        </div>
+                    </div>
                     <small>Gate ${plane.gate} · ${plane.parkingName}</small>
                     <div class="plane-runway-selector">
                         ${controls.runwayButtons}
@@ -1982,6 +2017,7 @@ function setupMap() {
 
         function createPlaneControlCardContent(plane) {
             const controls = createPlaneActionMarkup(plane);
+            const airlineBadge = createAirlineBadgeMarkup(plane);
             const statusLabel = plane.returningToGate
                 ? "Returning to stand"
                 : plane.hasAssignedRunway
@@ -1997,7 +2033,13 @@ function setupMap() {
                         </div>
                         <span class="plane-control-status">${statusLabel}</span>
                     </div>
-                    <small>Aircraft ${plane.aircraftModel}</small>
+                    <div class="plane-airline-row">
+                        ${airlineBadge}
+                        <div class="plane-airline-meta">
+                            <small>${plane.airlineName}</small>
+                            <small>${plane.aircraftModel}</small>
+                        </div>
+                    </div>
                     <small>Gate ${plane.gate} · ${plane.parkingName}</small>
                     <div class="plane-runway-selector">
                         ${controls.runwayButtons}
@@ -2303,6 +2345,78 @@ function setupMap() {
 
         if (planeControlList) {
             const planeByCallsign = new Map(animatedPlanes.map((plane) => [plane.callsign, plane]));
+            let hoveredPlane = null;
+            let hoveredPlaneCard = null;
+
+            function clearHoveredPlaneIndicator() {
+                if (!hoveredPlane) {
+                    return;
+                }
+
+                hoveredPlaneCard?.classList.remove("plane-control-card-linked");
+                hoveredPlane.marker.getElement()?.classList.remove("plane-marker-linked");
+                hoveredPlane.marker.setZIndexOffset(6000);
+                hoveredPlane.marker.closePopup();
+                hoveredPlane = null;
+                hoveredPlaneCard = null;
+            }
+
+            function highlightPlaneFromCard(plane, card) {
+                if (hoveredPlane === plane && hoveredPlaneCard === card) {
+                    return;
+                }
+
+                clearHoveredPlaneIndicator();
+                hoveredPlane = plane;
+                hoveredPlaneCard = card;
+                card.classList.add("plane-control-card-linked");
+                plane.marker.getElement()?.classList.add("plane-marker-linked");
+                plane.marker.setZIndexOffset(8500);
+                map.closePopup();
+                plane.marker.openPopup();
+            }
+
+            planeControlList.addEventListener("mouseover", (event) => {
+                if (!(event.target instanceof Element)) {
+                    return;
+                }
+
+                const card = event.target.closest("[data-plane]");
+
+                if (!card || !(card instanceof HTMLElement)) {
+                    return;
+                }
+
+                if (event.relatedTarget instanceof Node && card.contains(event.relatedTarget)) {
+                    return;
+                }
+
+                const plane = planeByCallsign.get(card.getAttribute("data-plane"));
+
+                if (plane) {
+                    highlightPlaneFromCard(plane, card);
+                }
+            });
+
+            planeControlList.addEventListener("mouseout", (event) => {
+                if (!(event.target instanceof Element)) {
+                    return;
+                }
+
+                const card = event.target.closest("[data-plane]");
+
+                if (!card) {
+                    return;
+                }
+
+                if (event.relatedTarget instanceof Node && card.contains(event.relatedTarget)) {
+                    return;
+                }
+
+                if (hoveredPlaneCard === card) {
+                    clearHoveredPlaneIndicator();
+                }
+            });
 
             planeControlList.addEventListener("click", (event) => {
                 const button = event.target instanceof Element
