@@ -22,23 +22,23 @@ export const MajorAirlines = [
     { name: "Finnair", code: "FIN", region: "Europe", logoFile: "Finnair.png", logoScale: 1.14 },
     { name: "ITA Airways", code: "ITY", region: "Europe", logoFile: "ITA.png", logoScale: 1.2 },
     { name: "Air China", code: "CCA", region: "Asia", logoFile: "AirChina.png", logoScale: 1.14 },
-    { name: "China Eastern Airlines", code: "CES", region: "Asia" },
-    { name: "China Southern Airlines", code: "CSN", region: "Asia" },
-    { name: "All Nippon Airways", code: "ANA", region: "Asia" },
-    { name: "Japan Airlines", code: "JAL", region: "Asia" },
-    { name: "Singapore Airlines", code: "SIA", region: "Asia" },
-    { name: "Cathay Pacific", code: "CPA", region: "Asia" },
-    { name: "Korean Air", code: "KAL", region: "Asia" },
-    { name: "Emirates", code: "UAE", region: "Middle East" },
-    { name: "Qatar Airways", code: "QTR", region: "Middle East" },
-    { name: "Etihad Airways", code: "ETD", region: "Middle East" },
-    { name: "Saudia", code: "SVA", region: "Middle East" },
-    { name: "Qantas", code: "QFA", region: "Oceania" },
-    { name: "LATAM Airlines", code: "LAN", region: "South America" },
-    { name: "Avianca", code: "AVA", region: "South America" },
-    { name: "South African Airways", code: "SAA", region: "Africa" },
-    { name: "Ethiopian Airlines", code: "ETH", region: "Africa" },
-    { name: "Hawaiian Airlines", code: "HAL", region: "North America" }
+    { name: "China Eastern Airlines", code: "CES", region: "Asia", logoFile: "ChinaEastern.png", logoScale: 1.14 },
+    { name: "China Southern Airlines", code: "CSN", region: "Asia", logoFile: "ChinaSouthern.png", logoScale: 1.16 },
+    { name: "All Nippon Airways", code: "ANA", region: "Asia", logoFile: "ANA.png", logoScale: 1.18 },
+    { name: "Japan Airlines", code: "JAL", region: "Asia", logoFile: "JapanAirlines.png", logoScale: 1.16 },
+    { name: "Singapore Airlines", code: "SIA", region: "Asia", logoFile: "SingaporeAirlines.png", logoScale: 1.16 },
+    { name: "Cathay Pacific", code: "CPA", region: "Asia", logoFile: "CathayPacific.png", logoScale: 1.16 },
+    { name: "Korean Air", code: "KAL", region: "Asia", logoFile: "KoreanAir.png", logoScale: 1.16 },
+    { name: "Emirates", code: "UAE", region: "Middle East", logoFile: "Emirates.png", logoScale: 1.16 },
+    { name: "Qatar Airways", code: "QTR", region: "Middle East", logoFile: "QatarAirways.png", logoScale: 1.16 },
+    { name: "Etihad Airways", code: "ETD", region: "Middle East", logoFile: "EithadAirways.png", logoScale: 1.18 },
+    { name: "Saudia", code: "SVA", region: "Middle East", logoFile: "Saudia.png", logoScale: 1.16 },
+    { name: "Qantas", code: "QFA", region: "Oceania", logoFile: "Qantas.png", logoScale: 1.16 },
+    { name: "LATAM Airlines", code: "LAN", region: "South America", logoFile: "LatamAirlines.png", logoScale: 1.16 },
+    { name: "Avianca", code: "AVA", region: "South America", logoFile: "Avianca.png", logoScale: 1.16 },
+    { name: "South African Airways", code: "SAA", region: "Africa", logoFile: "SouthAfrican.png", logoScale: 1.16 },
+    { name: "Thai Airways", code: "THA", region: "Asia", logoFile: "Thai.png", logoScale: 1.18 },
+    { name: "Hawaiian Airlines", code: "HAL", region: "North America", logoFile: "HawaiianAIrlines.png", logoScale: 1.2 }
 ];
 
 const majorAirlinesByCode = new Map(MajorAirlines.map((airline) => [airline.code, airline]));
@@ -92,7 +92,7 @@ const weightedMajorAirlineCodes = [
     "LAN",
     "AVA",
     "SAA",
-    "ETH",
+    "THA",
     "HAL"
 ];
 

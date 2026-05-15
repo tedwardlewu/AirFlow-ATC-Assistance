@@ -66,9 +66,20 @@ export function CreateDeterministicModelOrder(models, seed = 37) {
     return orderedModels;
 }
 
+function ShuffleModelOrder(models) {
+    const shuffledModels = [...models];
+
+    for (let index = shuffledModels.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [shuffledModels[index], shuffledModels[swapIndex]] = [shuffledModels[swapIndex], shuffledModels[index]];
+    }
+
+    return shuffledModels;
+}
+
 export function AssignAircraftModels(planes, models = CommercialJetModels) {
-    const orderedModels = CreateDeterministicModelOrder(models);
-    const orderedAirlines = CreateDeterministicModelOrder(WeightedMajorAirlines, 53);
+    const orderedModels = ShuffleModelOrder(models);
+    const orderedAirlines = ShuffleModelOrder(WeightedMajorAirlines);
 
     return planes.map((plane, index) => ({
         ...plane,

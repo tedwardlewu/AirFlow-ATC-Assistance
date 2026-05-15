@@ -198,38 +198,8 @@ const movingAssets = [
     }
 ];
 
-const taxiPlaneFeed = [
-    { callsign: "ACA430", gate: "52", speed: 0.0065 },
-    { callsign: "ACA311", gate: "54", speed: 0.0055 },
-    { callsign: "PAL201", gate: "57", speed: 0.0060 },
-    { callsign: "AFR344", gate: "63", speed: 0.0048 },
-    { callsign: "UPS721", gate: "Cargo North", speed: 0.0044 },
-    { callsign: "DLH473", gate: "South Pad", speed: 0.0042 },
-    { callsign: "WJA602", gate: "52", speed: 0.0051 },
-    { callsign: "QTR763", gate: "54", speed: 0.0049 },
-    { callsign: "BAW412", gate: "63", speed: 0.0047 },
-    { callsign: "AAL128", gate: "59", speed: 0.0056 },
-    { callsign: "UAL991", gate: "57", speed: 0.0053 },
-    { callsign: "KLM672", gate: "63", speed: 0.0046 },
-    { callsign: "SWR214", gate: "54", speed: 0.0050 },
-    { callsign: "IBE908", gate: "52", speed: 0.0054 },
-    { callsign: "THY815", gate: "57", speed: 0.0052 },
-    { callsign: "JBU417", gate: "59", speed: 0.0057 },
-    { callsign: "FFT261", gate: "54", speed: 0.0059 },
-    { callsign: "ASA338", gate: "52", speed: 0.0058 },
-    { callsign: "CPA792", gate: "63", speed: 0.0045 },
-    { callsign: "ETD471", gate: "63", speed: 0.0044 },
-    { callsign: "EIN225", gate: "57", speed: 0.0052 },
-    { callsign: "TSC880", gate: "59", speed: 0.0051 },
-    { callsign: "ACA192", gate: "54", speed: 0.0056 },
-    { callsign: "FDX604", gate: "Cargo North", speed: 0.0043 },
-    { callsign: "SIA301", gate: "63", speed: 0.0046 },
-    { callsign: "ANA118", gate: "63", speed: 0.0047 },
-    { callsign: "DAL807", gate: "59", speed: 0.0054 },
-    { callsign: "WJA118", gate: "52", speed: 0.0055 }
-];
-
-const enrichedTaxiPlaneFeed = AssignAircraftModels(taxiPlaneFeed);
+const startupOccupancyRatio = 0.8;
+const startupInboundShare = 0.08;
 
 function getDirectChildrenByName(element, name) {
     return Array.from(element.children).filter((child) => child.localName === name);
@@ -712,6 +682,17 @@ function getLinePoints(entry) {
     return Array.isArray(entry) ? entry : entry.linePoints;
 }
 
+function shuffleItems(items) {
+    const shuffledItems = [...items];
+
+    for (let index = shuffledItems.length - 1; index > 0; index -= 1) {
+        const swapIndex = Math.floor(Math.random() * (index + 1));
+        [shuffledItems[index], shuffledItems[swapIndex]] = [shuffledItems[swapIndex], shuffledItems[index]];
+    }
+
+    return shuffledItems;
+}
+
 function dedupeRoutePoints(points) {
     return points.reduce((route, point) => {
         if (!point) {
@@ -740,6 +721,81 @@ function buildBridgeRoute(start, end) {
 
 function getPointKey(point) {
     return `${point[0].toFixed(7)},${point[1].toFixed(7)}`;
+}
+
+function getNearestGateMarker(point) {
+    if (!gateMarkers.length) {
+        return null;
+    }
+
+    return gateMarkers.reduce((nearestGate, gateMarker) => {
+        const gateDistanceSquared = getPointDistanceSquared(point, gateMarker.coords);
+
+        if (!nearestGate || gateDistanceSquared < nearestGate.distanceSquared) {
+            return { gateMarker, distanceSquared: gateDistanceSquared };
+        }
+
+        return nearestGate;
+    }, null)?.gateMarker ?? null;
+}
+
+function createStartupTraffic(parkingEntries, runwayEntries, occupancyRatio = startupOccupancyRatio) {
+    const shuffledParkingEntries = shuffleItems(parkingEntries);
+    const targetPlaneCount = Math.max(
+        1,
+        Math.min(shuffledParkingEntries.length, Math.floor(shuffledParkingEntries.length * occupancyRatio))
+    );
+    const inboundPlaneCount = runwayEntries.length && targetPlaneCount > 1
+        ? Math.max(1, Math.min(targetPlaneCount - 1, Math.round(targetPlaneCount * startupInboundShare)))
+        : 0;
+    const departurePlaneCount = targetPlaneCount - inboundPlaneCount;
+    const departurePlanes = shuffledParkingEntries.slice(0, departurePlaneCount).map((parkingEntry, index) => {
+        const standPoint = interpolatePath(getLinePoints(parkingEntry), 0.5);
+        const nearestGate = getNearestGateMarker(standPoint);
+        const gateLabel = nearestGate?.name?.replace(/^Gate\s+/i, "") ?? `Stand ${index + 1}`;
+
+        return {
+            callsign: `FLT${String(index + 1).padStart(3, "0")}`,
+            gate: gateLabel,
+            gateCoords: nearestGate?.coords ?? standPoint,
+            preferredParkingId: parkingEntry.id,
+            operationType: "departure",
+            speed: 0.0042 + (Math.random() * 0.0018)
+        };
+    });
+
+    const arrivalPlanes = shuffledParkingEntries
+        .slice(departurePlaneCount, departurePlaneCount + inboundPlaneCount)
+        .map((parkingEntry, index) => {
+            const standPoint = interpolatePath(getLinePoints(parkingEntry), 0.5);
+            const nearestGate = getNearestGateMarker(standPoint);
+            const gateLabel = nearestGate?.name?.replace(/^Gate\s+/i, "") ?? `Stand ${departurePlaneCount + index + 1}`;
+            const runwayEntry = runwayEntries[index % runwayEntries.length];
+            const arrivalProgress = index % 2 === 0 ? 0.08 : 0.92;
+            const arrivalPoint = interpolatePath(runwayEntry.linePoints, arrivalProgress);
+
+            return {
+                callsign: `FLT${String(departurePlaneCount + index + 1).padStart(3, "0")}`,
+                gate: gateLabel,
+                gateCoords: nearestGate?.coords ?? standPoint,
+                preferredParkingId: parkingEntry.id,
+                operationType: "arrival",
+                arrivalOrigin: [arrivalPoint.lat, arrivalPoint.lng],
+                arrivalRunwayName: runwayEntry.name,
+                speed: 0.0043 + (Math.random() * 0.0014)
+            };
+        });
+
+    const basePlanes = [...departurePlanes, ...arrivalPlanes];
+
+    return AssignAircraftModels(basePlanes).map((plane, index) => {
+        const numericSuffix = 100 + ((Math.floor(Math.random() * 900) + (index * 37)) % 900);
+
+        return {
+            ...plane,
+            callsign: `${plane.airlineCode}${numericSuffix}`
+        };
+    });
 }
 
 function connectGraphNodes(graphNodes, start, end) {
@@ -1181,6 +1237,35 @@ function resolveParkingStand(origin, parkingEntries, taxiwayLines, reservedParki
     };
 }
 
+function buildParkingStandFromEntry(parkingEntry, taxiwayLines) {
+    if (!parkingEntry) {
+        return null;
+    }
+
+    const parkingRoute = orientParkingPushbackRoute(getLinePoints(parkingEntry), taxiwayLines);
+
+    if (!parkingRoute?.length) {
+        return null;
+    }
+
+    const parkingProfile = createRouteProfile(parkingRoute);
+    const spawnProgress = parkingProfile.totalLength
+        ? Math.min((16 / 111320) / parkingProfile.totalLength, 0.24)
+        : 0;
+    const spawnLatLng = interpolateRouteProfile(parkingProfile, spawnProgress);
+    const spawnHeading = normalizeHeading(
+        getPathHeading(parkingProfile, Math.min(spawnProgress + 0.001, 0.2), 1) + 180
+    );
+
+    return {
+        parkingMatch: { entry: parkingEntry, linePoints: getLinePoints(parkingEntry) },
+        parkingRoute,
+        spawnPoint: [spawnLatLng.lat, spawnLatLng.lng],
+        spawnHeading,
+        parkingConnector: parkingRoute.at(-1)
+    };
+}
+
 function buildDepartureRoute(origin, parkingEntries, taxiwayLines, runwayEntries, holdEntries, surfaceRouteGraph, runwayPreference = 0, reservedParkingIds = new Set(), options = {}) {
     const preferredParkingId = options.preferredParkingId ?? null;
     const preferredRunwayName = options.preferredRunwayName ?? null;
@@ -1286,6 +1371,19 @@ function buildReturnToGateRoute(origin, parkingEntries, taxiwayLines, runwayEntr
 function getDepartureSpeed(plane) {
     const speedMultiplier = plane.speedMultiplier ?? 1;
 
+    if (plane.operationType === "arrival" && plane.returningToGate) {
+        const rolloutEnd = plane.arrivalRolloutEnd ?? 0;
+
+        if (plane.progress < rolloutEnd) {
+            const rolloutProgress = rolloutEnd > 0 ? plane.progress / rolloutEnd : 1;
+            const arrivalSpeed = plane.arrivalLandingSpeed ?? plane.runwaySpeed;
+            const rolloutSpeed = arrivalSpeed + ((plane.taxiSpeed - arrivalSpeed) * rolloutProgress);
+            return rolloutSpeed * speedMultiplier;
+        }
+
+        return plane.taxiSpeed * speedMultiplier;
+    }
+
     if (plane.returningToGate) {
         return plane.abortSpeed * speedMultiplier;
     }
@@ -1322,6 +1420,12 @@ const planeSpacingMetersByPhase = {
 };
 
 function getPlaneSpacingMeters(plane) {
+    if (plane.operationType === "arrival" && plane.returningToGate) {
+        return plane.progress < (plane.arrivalRolloutEnd ?? 0)
+            ? planeSpacingMetersByPhase.runway
+            : planeSpacingMetersByPhase.taxi;
+    }
+
     if (plane.progress < plane.pushbackEnd) {
         return planeSpacingMetersByPhase.pushback;
     }
@@ -1338,11 +1442,22 @@ function getPlaneSpacingMeters(plane) {
 }
 
 function getRunwayHoldProgress(plane) {
-    return Math.max(plane.holdProgress, plane.pushbackEnd + 0.01);
+    return Math.max(
+        Math.min(plane.holdProgress - 0.006, plane.runwayStart - 0.012),
+        plane.pushbackEnd + 0.01
+    );
+}
+
+function getPlaneDepartureClearance(plane) {
+    return plane.departureClearance ?? "hold-short";
 }
 
 function getRunwayDepartureLeaders(planes) {
     return planes.reduce((leaders, plane) => {
+        if (plane.returningToGate) {
+            return leaders;
+        }
+
         if (plane.progress < plane.holdProgress || plane.progress >= 1) {
             return leaders;
         }
@@ -1921,7 +2036,11 @@ function setupMap() {
         let planeSearchQuery = "";
 
         function createPlaneActionMarkup(plane) {
-            const runwayButtons = runwayChoices.map((runwayName) => {
+            const isArrival = plane.operationType === "arrival" && plane.returningToGate;
+            const hasRunwayAssignment = plane.hasAssignedRunway && !plane.returningToGate && !isArrival;
+            const runwayButtons = isArrival
+                ? ""
+                : runwayChoices.map((runwayName) => {
                 const isActive = runwayName === plane.runwayName;
                 return `
                     <button type="button" class="plane-runway-button${isActive ? " active" : ""}" data-runway="${runwayName}">
@@ -1929,7 +2048,23 @@ function setupMap() {
                     </button>
                 `;
             }).join("");
+            const departureClearance = getPlaneDepartureClearance(plane);
             const speedPercent = Math.round((plane.speedMultiplier ?? 1) * 100);
+            const clearanceControls = !isArrival
+                ? `
+                    <div class="plane-clearance-row">
+                        <button type="button" class="plane-action-button clearance${hasRunwayAssignment && departureClearance === "hold-short" ? " active-clearance" : ""}" data-clearance="hold-short" ${hasRunwayAssignment ? "" : "disabled"}>
+                            Hold short
+                        </button>
+                        <button type="button" class="plane-action-button clearance${hasRunwayAssignment && departureClearance === "line-up" ? " active-clearance" : ""}" data-clearance="line-up" ${hasRunwayAssignment ? "" : "disabled"}>
+                            Line up & wait
+                        </button>
+                        <button type="button" class="plane-action-button clearance${hasRunwayAssignment && departureClearance === "immediate" ? " active-clearance" : ""}" data-clearance="immediate" ${hasRunwayAssignment ? "" : "disabled"}>
+                            Immediate takeoff
+                        </button>
+                    </div>
+                `
+                : "";
             const speedControls = `
                 <div class="plane-action-row">
                     <button type="button" class="plane-action-button" data-speed-change="-1">
@@ -1940,7 +2075,7 @@ function setupMap() {
                     </button>
                 </div>
             `;
-            const abortAction = plane.hasAssignedRunway && plane.progress >= plane.runwayStart && !plane.returningToGate
+            const abortAction = plane.hasAssignedRunway && plane.progress >= plane.runwayStart && !plane.returningToGate && !isArrival
                 ? `
                     <button type="button" class="plane-action-button abort" data-abort-takeoff="true">
                         Abort take off
@@ -1950,11 +2085,20 @@ function setupMap() {
 
             return {
                 runwayButtons,
+                clearanceControls,
                 speedPercent,
                 speedControls,
                 abortAction,
-                hint: plane.hasAssignedRunway
-                    ? "Click a runway to reroute this departure."
+                hint: hasRunwayAssignment
+                    ? isArrival
+                        ? `Inbound via ${plane.arrivalRunwayName ?? "arrival runway"}, taxiing to stand.`
+                        : {
+                        "hold-short": "Hold short before the purple hold line.",
+                        "line-up": "Line up on the runway and wait.",
+                        "immediate": "Line up and depart without stopping on the runway."
+                    }[departureClearance]
+                    : !isArrival
+                        ? "Assign a runway first, then issue hold short, line up, or immediate takeoff."
                     : "Click a runway to start pushback and taxi."
             };
         }
@@ -1992,6 +2136,13 @@ function setupMap() {
         function createPlaneControlPopupContent(plane) {
             const controls = createPlaneActionMarkup(plane);
             const airlineBadge = createAirlineBadgeMarkup(plane);
+            const runwaySelectorMarkup = controls.runwayButtons
+                ? `
+                    <div class="plane-runway-selector">
+                        ${controls.runwayButtons}
+                    </div>
+                `
+                : "";
 
             return `
                 <div class="plane-control-popup" data-plane="${plane.callsign}">
@@ -2004,9 +2155,8 @@ function setupMap() {
                         </div>
                     </div>
                     <small>Gate ${plane.gate} · ${plane.parkingName}</small>
-                    <div class="plane-runway-selector">
-                        ${controls.runwayButtons}
-                    </div>
+                    ${runwaySelectorMarkup}
+                    ${controls.clearanceControls}
                     ${controls.speedControls}
                     <small>Speed ${controls.speedPercent}%</small>
                     ${controls.abortAction}
@@ -2018,7 +2168,18 @@ function setupMap() {
         function createPlaneControlCardContent(plane) {
             const controls = createPlaneActionMarkup(plane);
             const airlineBadge = createAirlineBadgeMarkup(plane);
-            const statusLabel = plane.returningToGate
+            const runwaySelectorMarkup = controls.runwayButtons
+                ? `
+                    <div class="plane-runway-selector">
+                        ${controls.runwayButtons}
+                    </div>
+                `
+                : "";
+            const statusLabel = plane.operationType === "arrival" && plane.returningToGate
+                ? plane.progress < (plane.arrivalRolloutEnd ?? 0)
+                    ? `Landing ${plane.arrivalRunwayName ?? "Inbound"}`
+                    : `Inbound ${plane.gate}`
+                : plane.returningToGate
                 ? "Returning to stand"
                 : plane.hasAssignedRunway
                     ? (plane.progress >= plane.runwayStart ? "On runway" : `Assigned ${plane.runwayName}`)
@@ -2041,9 +2202,8 @@ function setupMap() {
                         </div>
                     </div>
                     <small>Gate ${plane.gate} · ${plane.parkingName}</small>
-                    <div class="plane-runway-selector">
-                        ${controls.runwayButtons}
-                    </div>
+                    ${runwaySelectorMarkup}
+                    ${controls.clearanceControls}
                     ${controls.speedControls}
                     <small>Speed ${controls.speedPercent}%</small>
                     ${controls.abortAction}
@@ -2061,8 +2221,30 @@ function setupMap() {
             const visiblePlanes = normalizedQuery
                 ? planes.filter((plane) => plane.callsign.includes(normalizedQuery))
                 : planes;
+            const inboundPlanes = visiblePlanes.filter((plane) => plane.operationType === "arrival" && plane.returningToGate);
+            const groundPlanes = visiblePlanes.filter((plane) => !(plane.operationType === "arrival" && plane.returningToGate));
+            const buildSectionMarkup = (title, subtitle, sectionPlanes) => {
+                if (!sectionPlanes.length) {
+                    return "";
+                }
+
+                return `
+                    <section class="plane-control-section">
+                        <div class="plane-control-section-heading">
+                            <strong>${title}</strong>
+                            <small>${subtitle}</small>
+                        </div>
+                        <div class="plane-control-section-list">
+                            ${sectionPlanes.map((plane) => createPlaneControlCardContent(plane)).join("")}
+                        </div>
+                    </section>
+                `;
+            };
             const nextMarkup = visiblePlanes.length
-                ? visiblePlanes.map((plane) => createPlaneControlCardContent(plane)).join("")
+                ? [
+                    buildSectionMarkup("Inbound Aircraft", "Landing rollout and taxi-in traffic.", inboundPlanes),
+                    buildSectionMarkup("Aircraft On Ground", "Departures, queued traffic, and turnaround aircraft.", groundPlanes)
+                ].join("")
                 : `<div class="plane-control-empty">No flights match “${planeSearchQuery.trim()}”.</div>`;
 
             if (nextMarkup === lastPlaneControlPanelMarkup) {
@@ -2078,6 +2260,13 @@ function setupMap() {
 
             if (selectedRunway) {
                 reroutePlaneToRunway(plane, selectedRunway);
+                return;
+            }
+
+            const selectedClearance = button.getAttribute("data-clearance");
+
+            if (selectedClearance) {
+                setPlaneDepartureClearance(plane, selectedClearance);
                 return;
             }
 
@@ -2137,6 +2326,20 @@ function setupMap() {
             updatePlanePopup(plane, true);
         }
 
+        function setPlaneDepartureClearance(plane, clearance) {
+            plane.departureClearance = clearance;
+
+            if (clearance === "hold-short" && plane.progress >= plane.holdProgress && plane.progress < plane.runwayStart) {
+                plane.progress = getRunwayHoldProgress(plane);
+            }
+
+            if (clearance !== "immediate" && plane.progress >= plane.runwayStart && plane.progress < 0.995) {
+                plane.progress = plane.runwayStart;
+            }
+
+            updatePlanePopup(plane, true);
+        }
+
         function setPlaneParked(plane) {
             plane.route = null;
             plane.routeProfile = null;
@@ -2150,6 +2353,10 @@ function setupMap() {
             plane.progress = 0;
             plane.hasAssignedRunway = false;
             plane.returningToGate = false;
+            plane.departureClearance = "hold-short";
+            plane.operationType = "departure";
+            plane.arrivalRolloutEnd = 0;
+            plane.arrivalRunwayName = null;
 
             plane.marker.setLatLng({ lat: plane.standbyCoords[0], lng: plane.standbyCoords[1] });
             plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, getPlaneHeading(plane), map.getZoom()));
@@ -2169,6 +2376,7 @@ function setupMap() {
             plane.progress = Math.min(Math.max(nextProgress, 0), 0.999);
             plane.hasAssignedRunway = true;
             plane.returningToGate = false;
+            plane.departureClearance = "hold-short";
 
             const position = interpolateRouteProfile(plane.routeProfile, plane.progress);
             plane.marker.setLatLng(position);
@@ -2204,6 +2412,7 @@ function setupMap() {
             plane.progress = 0;
             plane.returningToGate = true;
             plane.hasAssignedRunway = true;
+            plane.departureClearance = "hold-short";
 
             const position = interpolateRouteProfile(plane.routeProfile, plane.progress);
             plane.marker.setLatLng(position);
@@ -2285,13 +2494,13 @@ function setupMap() {
         }).addTo(kmlGroups.taxiways), 2.6).bindPopup("<strong>Taxiways</strong><br>Taxiway network from Montreal YUL.kml");
 
         const reservedParkingIds = new Set();
-        const animatedPlanes = enrichedTaxiPlaneFeed.map((plane, index) => {
-            const gate = gateMarkers.find((gateMarker) => gateMarker.name.endsWith(plane.gate));
-            if (!gate) {
-                return null;
-            }
-
-            const parkingStand = resolveParkingStand(gate.coords, parkingLineSets, taxiwayLineSets, reservedParkingIds);
+        const startupPlaneFeed = createStartupTraffic(parkingLineSets, runwayLineSets);
+        const parkingEntryById = new Map(parkingLineSets.map((entry) => [entry.id, entry]));
+        const animatedPlanes = startupPlaneFeed.map((plane, index) => {
+            const gateCoords = plane.gateCoords ?? airportCenter;
+            const preferredParkingEntry = parkingEntryById.get(plane.preferredParkingId);
+            const parkingStand = buildParkingStandFromEntry(preferredParkingEntry, taxiwayLineSets)
+                ?? resolveParkingStand(gateCoords, parkingLineSets, taxiwayLineSets, reservedParkingIds, plane.preferredParkingId);
 
             if (!parkingStand) {
                 return null;
@@ -2299,9 +2508,11 @@ function setupMap() {
 
             reservedParkingIds.add(parkingStand.parkingMatch.entry.id);
 
+            const isArrival = plane.operationType === "arrival";
             const initialProgress = 0;
             const initialDirection = 1;
-            const marker = L.marker({ lat: parkingStand.spawnPoint[0], lng: parkingStand.spawnPoint[1] }, {
+            const arrivalOrigin = plane.arrivalOrigin ?? parkingStand.spawnPoint;
+            const marker = L.marker({ lat: arrivalOrigin[0], lng: arrivalOrigin[1] }, {
                 icon: createPlaneMarkerIcon(plane.callsign, parkingStand.spawnHeading, map.getZoom()),
                 zIndexOffset: 6000,
                 keyboard: false
@@ -2310,7 +2521,7 @@ function setupMap() {
             const animatedPlane = {
                 ...plane,
                 marker,
-                gateCoords: gate.coords,
+                gateCoords,
                 standbyCoords: parkingStand.spawnPoint,
                 standbyHeading: parkingStand.spawnHeading,
                 route: null,
@@ -2329,14 +2540,49 @@ function setupMap() {
                 runwaySpeed: Math.max(plane.speed * 5.2, 0.031),
                 takeoffAcceleration: Math.max(plane.speed * 9.5, 0.13),
                 abortSpeed: Math.max(plane.speed * 0.26, 0.0012),
+                arrivalLandingSpeed: Math.max(plane.speed * 7.6, 0.028),
+                arrivalRolloutEnd: 0,
                 holdDelayMs: 350 + (index * 40),
                 holdStartedAt: null,
                 progress: initialProgress,
                 direction: initialDirection,
-                hasAssignedRunway: false,
-                returningToGate: false,
+                hasAssignedRunway: isArrival,
+                returningToGate: isArrival,
+                departureClearance: "hold-short",
                 speedMultiplier: 1
             };
+
+            if (isArrival) {
+                const returnRoute = buildReturnToGateRoute(
+                    plane.arrivalOrigin,
+                    parkingLineSets,
+                    taxiwayLineSets,
+                    runwayLineSets,
+                    surfaceRouteGraph,
+                    plane.preferredParkingId,
+                    gateCoords
+                );
+
+                if (!returnRoute) {
+                    marker.remove();
+                    return null;
+                }
+
+                animatedPlane.route = returnRoute.route;
+                animatedPlane.routeProfile = createRouteProfile(returnRoute.route);
+                animatedPlane.parkingId = returnRoute.parkingId;
+                animatedPlane.parkingName = returnRoute.parkingName;
+                animatedPlane.runwayName = plane.arrivalRunwayName;
+                animatedPlane.pushbackEnd = 0;
+                animatedPlane.holdProgress = 0;
+                animatedPlane.runwayStart = 1;
+                animatedPlane.arrivalRolloutEnd = Math.min(0.22, Math.max(0.08, (260 / 111320) / Math.max(animatedPlane.routeProfile.totalLength, 1e-6)));
+                animatedPlane.progress = 0;
+                const initialArrivalPosition = interpolateRouteProfile(animatedPlane.routeProfile, 0);
+                animatedPlane.marker.setLatLng(initialArrivalPosition);
+            }
+
+            animatedPlane.marker.setIcon(createPlaneMarkerIcon(animatedPlane.callsign, getPlaneHeading(animatedPlane), map.getZoom()));
 
             attachPlanePopupHandlers(animatedPlane);
 
@@ -2506,16 +2752,28 @@ function setupMap() {
                     }
 
                     if (
-                        plane.progress >= plane.holdProgress
+                        !plane.returningToGate
+                        && plane.progress >= plane.holdProgress
                         && plane.progress < plane.runwayStart
                     ) {
+                        const canLineUp = getPlaneDepartureClearance(plane) !== "hold-short";
                         const isWaitingForClearance = (runwayDepartureLeader && runwayDepartureLeader !== plane)
                             || occupiedRunways.has(plane.runwayName)
-                            || plane.holdStartedAt == null;
+                            || plane.holdStartedAt == null
+                            || !canLineUp;
 
                         if (isWaitingForClearance) {
                             plane.progress = getRunwayHoldProgress(plane);
                         }
+                    }
+
+                    if (
+                        plane.progress >= plane.runwayStart
+                        && plane.progress < 0.995
+                        && !plane.returningToGate
+                        && getPlaneDepartureClearance(plane) !== "immediate"
+                    ) {
+                        plane.progress = plane.runwayStart;
                     }
 
                     if (plane.progress >= 1) {

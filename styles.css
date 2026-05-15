@@ -48,6 +48,10 @@ body::after {
     display: none;
 }
 
+#airport-map {
+    background: #040608;
+}
+
 .app-shell {
     position: relative;
     z-index: 1;
@@ -407,6 +411,33 @@ body::after {
     padding-right: 4px;
 }
 
+.plane-control-section {
+    display: grid;
+    gap: 8px;
+}
+
+.plane-control-section-heading {
+    display: grid;
+    gap: 2px;
+    padding: 2px 2px 0;
+}
+
+.plane-control-section-heading strong {
+    font-size: 0.76rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text);
+}
+
+.plane-control-section-heading small {
+    color: var(--muted);
+    font-size: 0.66rem;
+}
+
+.plane-control-section-list {
+    display: grid;
+    gap: 10px;
+}
 .plane-side-panel-list::-webkit-scrollbar {
     width: 8px;
 }
@@ -589,6 +620,13 @@ body::after {
     margin: 4px 0 5px;
 }
 
+.plane-clearance-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 6px;
+    margin: 4px 0 5px;
+}
+
 .plane-runway-button:hover {
     background: rgba(119, 183, 234, 0.18);
     border-color: rgba(119, 183, 234, 0.4);
@@ -629,6 +667,30 @@ body::after {
 .plane-action-button.abort:hover {
     background: rgba(214, 76, 76, 0.22);
     border-color: rgba(214, 76, 76, 0.48);
+}
+
+.plane-action-button.clearance {
+    margin-bottom: 0;
+    padding: 6px 7px;
+    font-size: 0.64rem;
+}
+
+.plane-action-button.active-clearance {
+    background: rgba(119, 183, 234, 0.18);
+    border-color: rgba(119, 183, 234, 0.42);
+    color: #e4f3ff;
+}
+
+.plane-action-button:disabled {
+    opacity: 0.48;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.plane-action-button:disabled:hover {
+    transform: none;
+    background: rgba(255, 255, 255, 0.04);
+    border-color: rgba(255, 255, 255, 0.12);
 }
 
 .plane-control-hint {
