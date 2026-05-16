@@ -330,6 +330,28 @@ body::after {
     color: var(--muted);
 }
 
+.plane-side-panel-spawn-button {
+    width: 100%;
+    padding: 9px 12px;
+    border: 1px solid rgba(108, 255, 157, 0.34);
+    border-radius: 10px;
+    background: rgba(108, 255, 157, 0.12);
+    color: #dffff0;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: transform 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.plane-side-panel-spawn-button:hover {
+    transform: translateY(-1px);
+    background: rgba(108, 255, 157, 0.18);
+    border-color: rgba(108, 255, 157, 0.48);
+}
+
 .plane-control-card small {
     display: block;
 }
@@ -411,6 +433,60 @@ body::after {
     padding-right: 4px;
 }
 
+.plane-side-panel-nav {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+}
+
+.plane-side-panel-nav-button {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 12px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.04);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: border-color 140ms ease, background 140ms ease, box-shadow 140ms ease;
+}
+
+.plane-side-panel-nav-button span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    padding: 2px 6px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--muted-dark);
+    font-size: 0.7rem;
+    letter-spacing: 0;
+}
+
+.plane-side-panel-nav-button:hover {
+    border-color: rgba(119, 183, 234, 0.32);
+    background: rgba(119, 183, 234, 0.08);
+}
+
+.plane-side-panel-nav-button.active {
+    border-color: rgba(119, 183, 234, 0.46);
+    background: rgba(119, 183, 234, 0.14);
+    box-shadow: 0 0 0 1px rgba(119, 183, 234, 0.14);
+}
+
+.plane-side-panel-nav-button.active span {
+    background: rgba(119, 183, 234, 0.22);
+    color: var(--text-dark);
+}
+
 .plane-control-section {
     display: grid;
     gap: 8px;
@@ -429,6 +505,17 @@ body::after {
     color: var(--text);
 }
 
+.plane-control-section-count {
+    justify-self: start;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(119, 183, 234, 0.14);
+    border: 1px solid rgba(119, 183, 234, 0.2);
+    color: var(--text);
+    font-size: 0.68rem;
+    font-weight: 600;
+}
+
 .plane-control-section-heading small {
     color: var(--muted);
     font-size: 0.66rem;
@@ -438,6 +525,16 @@ body::after {
     display: grid;
     gap: 10px;
 }
+
+.plane-control-section-empty {
+    padding: 12px;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px dashed rgba(255, 255, 255, 0.08);
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
 .plane-side-panel-list::-webkit-scrollbar {
     width: 8px;
 }
@@ -778,12 +875,25 @@ body::after {
 }
 
 .plane-image-marker-wrapper {
+    position: relative;
+    display: grid;
+    place-items: center;
     background: transparent;
     border: 0;
 }
 
 .plane-image-marker-wrapper.plane-marker-linked {
     z-index: 9000 !important;
+}
+
+.plane-image-marker-wrapper.plane-marker-linked::after {
+    content: "";
+    position: absolute;
+    inset: -8px;
+    border: 2px solid rgba(119, 183, 234, 0.95);
+    border-radius: 999px;
+    box-shadow: 0 0 0 5px rgba(119, 183, 234, 0.16), 0 0 16px rgba(119, 183, 234, 0.32);
+    pointer-events: none;
 }
 
 .plane-image-marker {

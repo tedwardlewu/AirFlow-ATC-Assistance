@@ -200,6 +200,12 @@ const movingAssets = [
 
 const startupOccupancyRatio = 0.8;
 const startupInboundShare = 0.08;
+const startupOpenStandReserve = 4;
+const arrivalSpawnIntervalMs = 60000;
+const arrivalSpawnDistanceMeters = 5600;
+const arrivalApproachLineColor = "#6cff9d";
+const minimumArrivalRunwayExitProgress = 0.14;
+const preferredArrivalRunwayExitProgress = 0.24;
 
 function getDirectChildrenByName(element, name) {
     return Array.from(element.children).filter((child) => child.localName === name);
@@ -739,14 +745,18 @@ function getNearestGateMarker(point) {
     }, null)?.gateMarker ?? null;
 }
 
-function createStartupTraffic(parkingEntries, runwayEntries, occupancyRatio = startupOccupancyRatio) {
+function createStartupTraffic(parkingEntries, runwayEntries, occupancyRatio = startupOccupancyRatio, inboundShare = startupInboundShare) {
     const shuffledParkingEntries = shuffleItems(parkingEntries);
-    const targetPlaneCount = Math.max(
+    const uncappedTargetPlaneCount = Math.max(
         1,
         Math.min(shuffledParkingEntries.length, Math.floor(shuffledParkingEntries.length * occupancyRatio))
     );
-    const inboundPlaneCount = runwayEntries.length && targetPlaneCount > 1
-        ? Math.max(1, Math.min(targetPlaneCount - 1, Math.round(targetPlaneCount * startupInboundShare)))
+    const targetPlaneCount = Math.max(
+        1,
+        Math.min(uncappedTargetPlaneCount, Math.max(shuffledParkingEntries.length - startupOpenStandReserve, 1))
+    );
+    const inboundPlaneCount = runwayEntries.length && targetPlaneCount > 1 && inboundShare > 0
+        ? Math.max(1, Math.min(targetPlaneCount - 1, Math.round(targetPlaneCount * inboundShare)))
         : 0;
     const departurePlaneCount = targetPlaneCount - inboundPlaneCount;
     const departurePlanes = shuffledParkingEntries.slice(0, departurePlaneCount).map((parkingEntry, index) => {
@@ -1322,6 +1332,452 @@ function buildDepartureRoute(origin, parkingEntries, taxiwayLines, runwayEntries
     };
 }
 
+function getHeadingBetweenPoints(start, end) {
+    const averageLatitude = ((start[0] + end[0]) / 2) * (Math.PI / 180);
+    const deltaX = (end[1] - start[1]) * Math.cos(averageLatitude);
+    const deltaY = end[0] - start[0];
+
+    return normalizeHeading(Math.atan2(deltaX, deltaY) * (180 / Math.PI));
+}
+
+function getHeadingDifference(leftHeading, rightHeading) {
+    const rawDifference = Math.abs(normalizeHeading(leftHeading) - normalizeHeading(rightHeading));
+    return Math.min(rawDifference, 360 - rawDifference);
+}
+
+function getRunwayDesignationHeading(designation) {
+    const runwayNumber = Number.parseInt(designation, 10);
+
+    if (!Number.isFinite(runwayNumber) || runwayNumber < 1 || runwayNumber > 36) {
+        return null;
+    }
+
+    return runwayNumber === 36 ? 360 : runwayNumber * 10;
+}
+
+function projectPointByHeading(point, heading, distanceMeters) {
+    const headingRadians = heading * (Math.PI / 180);
+    const metersPerDegreeLat = 111320;
+    const metersPerDegreeLng = metersPerDegreeLat * Math.cos(point[0] * (Math.PI / 180));
+
+    return [
+        point[0] + ((Math.cos(headingRadians) * distanceMeters) / metersPerDegreeLat),
+        point[1] + ((Math.sin(headingRadians) * distanceMeters) / Math.max(metersPerDegreeLng, 1e-6))
+    ];
+}
+
+function arePointsEquivalent(leftPoint, rightPoint, toleranceSquared = 1e-12) {
+    if (!leftPoint || !rightPoint) {
+        return false;
+    }
+
+    return getPointDistanceSquared(leftPoint, rightPoint) <= toleranceSquared;
+}
+
+function getArrivalRunwayThreshold(runwayEntry) {
+    const linePoints = getLinePoints(runwayEntry);
+
+    if (!linePoints || linePoints.length < 2) {
+        return null;
+    }
+
+    const [arrivalDesignation] = getRunwayDesignations(runwayEntry.name ?? "");
+    const desiredHeading = getRunwayDesignationHeading(arrivalDesignation ?? "");
+    const startPoint = linePoints[0];
+    const endPoint = linePoints.at(-1);
+    const startHeading = getHeadingBetweenPoints(startPoint, endPoint);
+    const endHeading = getHeadingBetweenPoints(endPoint, startPoint);
+
+    if (desiredHeading == null || getHeadingDifference(startHeading, desiredHeading) <= getHeadingDifference(endHeading, desiredHeading)) {
+        return {
+            designation: arrivalDesignation ?? runwayEntry.name ?? "Runway",
+            point: startPoint,
+            heading: startHeading
+        };
+    }
+
+    return {
+        designation: arrivalDesignation ?? runwayEntry.name ?? "Runway",
+        point: endPoint,
+        heading: endHeading
+    };
+}
+
+function getOrderedRunwayPoints(runwayEntry, thresholdPoint) {
+    const runwayPoints = [...(getLinePoints(runwayEntry) ?? [])];
+
+    if (!runwayPoints.length) {
+        return [];
+    }
+
+    if (arePointsEquivalent(runwayPoints[0], thresholdPoint)) {
+        return runwayPoints;
+    }
+
+    if (arePointsEquivalent(runwayPoints.at(-1), thresholdPoint)) {
+        return runwayPoints.reverse();
+    }
+
+    return runwayPoints;
+}
+
+function getArrivalCurveDirection(runwayName) {
+    const [designation] = getRunwayDesignations(runwayName ?? "");
+    const runwayNumber = Number.parseInt(designation, 10);
+
+    if (!Number.isFinite(runwayNumber)) {
+        return 1;
+    }
+
+    return runwayNumber % 2 === 0 ? 1 : -1;
+}
+
+function buildArrivalApproachPoint(touchdownPoint, runwayHeading, approachRatio, lateralOffsetMeters = 0, side = 1) {
+    const approachHeading = normalizeHeading(runwayHeading + 180);
+    const approachBasePoint = projectPointByHeading(
+        touchdownPoint,
+        approachHeading,
+        arrivalSpawnDistanceMeters * approachRatio
+    );
+
+    if (!lateralOffsetMeters) {
+        return approachBasePoint;
+    }
+
+    return projectPointByHeading(
+        approachBasePoint,
+        normalizeHeading(runwayHeading + (side * 90)),
+        lateralOffsetMeters
+    );
+}
+
+function buildCurvedArrivalApproach(touchdownPoint, runwayHeading, runwayName) {
+    const curveDirection = getArrivalCurveDirection(runwayName);
+    const isRunway06LPair = (runwayName ?? "").includes("24R / 06L");
+
+    if (isRunway06LPair) {
+        const arrivalOrigin = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.98, 760, curveDirection);
+        const outerLegPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.76, 640, curveDirection);
+        const baseTurnPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.48, 320, curveDirection);
+        const finalApproachPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.18, 54, curveDirection);
+
+        return {
+            arrivalOrigin,
+            approachPoints: [
+                arrivalOrigin,
+                outerLegPoint,
+                baseTurnPoint,
+                finalApproachPoint,
+                touchdownPoint
+            ]
+        };
+    }
+
+    const finalApproachPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.14, 0, curveDirection);
+    const innerCurvePoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.32, 210, curveDirection);
+    const outerCurvePoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.62, 520, curveDirection);
+    const arrivalOrigin = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.88, 520, curveDirection);
+
+    return {
+        arrivalOrigin,
+        approachPoints: [
+            arrivalOrigin,
+            outerCurvePoint,
+            innerCurvePoint,
+            finalApproachPoint,
+            touchdownPoint
+        ]
+    };
+}
+
+function getRunwayTaxiwayExitCandidate(runwayEntry, thresholdPoint, taxiwayLines) {
+    if (!taxiwayLines?.length) {
+        return null;
+    }
+
+    const orderedRunwayPoints = getOrderedRunwayPoints(runwayEntry, thresholdPoint);
+
+    if (orderedRunwayPoints.length < 2) {
+        return null;
+    }
+
+    const runwayProfile = createRouteProfile(orderedRunwayPoints);
+    const taxiwayCandidates = taxiwayLines.flatMap((taxiwayLine) => {
+        return taxiwayLine.map((taxiwayPoint) => {
+            const runwayPointMatch = getRouteProgressForPoint(runwayProfile, taxiwayPoint);
+
+            if (
+                runwayPointMatch.distanceSquared > 1.2e-6
+                || runwayPointMatch.progress <= minimumArrivalRunwayExitProgress
+            ) {
+                return null;
+            }
+
+            const runwayExitPoint = interpolateRouteProfile(runwayProfile, runwayPointMatch.progress);
+            const taxiwayMatch = getBestLineMatch(taxiwayPoint, taxiwayLine)
+                ?? findNearestLineMatch(taxiwayPoint, taxiwayLines);
+            const runwayMatch = getBestLineMatch([runwayExitPoint.lat, runwayExitPoint.lng], runwayEntry);
+
+            if (!taxiwayMatch || !runwayMatch) {
+                return null;
+            }
+
+            return {
+                progress: runwayPointMatch.progress,
+                runwayExitPoint: [runwayExitPoint.lat, runwayExitPoint.lng],
+                runwayMatch,
+                taxiwayMatch,
+                taxiwayLineLength: measurePolylineLength(taxiwayMatch.linePoints),
+                taxiwayDistanceSquared: taxiwayMatch.distanceSquared
+            };
+        }).filter(Boolean);
+    }).filter(Boolean)
+        .sort((left, right) => left.progress - right.progress);
+
+    const clusteredCandidates = taxiwayCandidates.reduce((clusters, candidate) => {
+        const currentCluster = clusters.at(-1);
+
+        if (!currentCluster || Math.abs(candidate.progress - currentCluster.at(-1).progress) > 0.015) {
+            clusters.push([candidate]);
+            return clusters;
+        }
+
+        currentCluster.push(candidate);
+        return clusters;
+    }, []);
+
+    const dedupedCandidates = clusteredCandidates.map((cluster) => {
+        return cluster.reduce((bestCandidate, candidate) => {
+            if (!bestCandidate) {
+                return candidate;
+            }
+
+            if (candidate.taxiwayLineLength > bestCandidate.taxiwayLineLength) {
+                return candidate;
+            }
+
+            if (
+                candidate.taxiwayLineLength === bestCandidate.taxiwayLineLength
+                && candidate.taxiwayDistanceSquared < bestCandidate.taxiwayDistanceSquared
+            ) {
+                return candidate;
+            }
+
+            return bestCandidate;
+        }, null);
+    }).filter(Boolean);
+
+    return dedupedCandidates.at(-2)
+        ?? dedupedCandidates.at(-1)
+        ?? null;
+}
+
+function getRunwayHoldExitCandidate(runwayEntry, thresholdPoint, holdEntries, taxiwayLines) {
+    if (!holdEntries?.length || !taxiwayLines?.length) {
+        return null;
+    }
+
+    const orderedRunwayPoints = getOrderedRunwayPoints(runwayEntry, thresholdPoint);
+
+    if (orderedRunwayPoints.length < 2) {
+        return null;
+    }
+
+    const runwayProfile = createRouteProfile(orderedRunwayPoints);
+    const holdCandidates = holdEntries.map((holdEntry) => {
+        const bestHoldPoint = holdEntry.linePoints.reduce((closestPoint, holdPoint) => {
+            const pointProgress = getRouteProgressForPoint(runwayProfile, holdPoint);
+
+            if (!closestPoint || pointProgress.distanceSquared < closestPoint.distanceSquared) {
+                return {
+                    holdPoint,
+                    progress: pointProgress.progress,
+                    distanceSquared: pointProgress.distanceSquared
+                };
+            }
+
+            return closestPoint;
+        }, null);
+
+        if (!bestHoldPoint || bestHoldPoint.distanceSquared > 8e-7) {
+            return null;
+        }
+
+        const runwayExitPoint = interpolateRouteProfile(runwayProfile, bestHoldPoint.progress);
+        const taxiwayMatch = findNearestLineMatch(bestHoldPoint.holdPoint, taxiwayLines);
+
+        if (!taxiwayMatch || taxiwayMatch.distanceSquared > 1.2e-6) {
+            return null;
+        }
+
+        return {
+            holdEntry,
+            progress: bestHoldPoint.progress,
+            holdPoint: bestHoldPoint.holdPoint,
+            runwayExitPoint: [runwayExitPoint.lat, runwayExitPoint.lng],
+            taxiwayMatch
+        };
+    }).filter(Boolean)
+        .sort((left, right) => left.progress - right.progress)
+        .filter((candidate, index, candidates) => {
+            if (candidate.progress <= minimumArrivalRunwayExitProgress) {
+                return false;
+            }
+
+            if (index === 0) {
+                return true;
+            }
+
+            return Math.abs(candidate.progress - candidates[index - 1].progress) > 0.015;
+        });
+
+    if (!holdCandidates.length) {
+        return null;
+    }
+
+    return holdCandidates[0] ?? null;
+}
+
+function buildRunwayRolloutRoute(runwayPoints, runwayProfile, runwayStartPoint, exitProgress) {
+    const rolloutPoints = [runwayStartPoint];
+
+    runwayPoints.forEach((point) => {
+        const pointProgress = getRouteProgressForPoint(runwayProfile, point).progress;
+
+        if (pointProgress > 0 && pointProgress < exitProgress) {
+            rolloutPoints.push(point);
+        }
+    });
+
+    const exitPoint = interpolateRouteProfile(runwayProfile, exitProgress);
+    rolloutPoints.push([exitPoint.lat, exitPoint.lng]);
+
+    return dedupeRoutePoints(rolloutPoints);
+}
+
+function getRunwayExitProgress(routeProfile, runwayEntry, touchdownPoint) {
+    const routePoints = routeProfile.points ?? [];
+    let lastRunwayPoint = touchdownPoint;
+
+    routePoints.forEach((point, index) => {
+        if (index === 0) {
+            return;
+        }
+
+        if (getNearestLineDistanceSquared(point, [runwayEntry]) <= 1e-10) {
+            lastRunwayPoint = point;
+        }
+    });
+
+    return getRouteProgressForPoint(routeProfile, lastRunwayPoint).progress;
+}
+
+function buildArrivalRoute(parkingEntries, taxiwayLines, runwayEntries, holdEntries, surfaceRouteGraph, options = {}) {
+    const preferredParkingId = options.preferredParkingId ?? null;
+    const preferredRunwayName = options.preferredRunwayName ?? null;
+    const gateOrigin = options.gateOrigin ?? airportCenter;
+    const runwayPreference = options.runwayPreference ?? 0;
+    const parkingStand = resolveParkingStand(gateOrigin, parkingEntries, taxiwayLines, new Set(), preferredParkingId);
+
+    if (!parkingStand) {
+        return null;
+    }
+
+    const candidateRunwayEntries = preferredRunwayName
+        ? runwayEntries.filter((entry) => entry.name === preferredRunwayName)
+        : runwayEntries;
+    const selectedRunwayEntry = candidateRunwayEntries[Math.min(runwayPreference % Math.max(candidateRunwayEntries.length, 1), Math.max(candidateRunwayEntries.length - 1, 0))]
+        ?? runwayEntries[0]
+        ?? null;
+
+    if (!selectedRunwayEntry) {
+        return null;
+    }
+
+    const threshold = getArrivalRunwayThreshold(selectedRunwayEntry);
+    const runwayMatch = threshold ? getBestLineMatch(threshold.point, selectedRunwayEntry) : null;
+
+    if (!threshold || !runwayMatch) {
+        return null;
+    }
+
+    const surfaceEntries = [
+        ...taxiwayLines,
+        ...runwayEntries
+    ];
+    const parkingSurfaceMatch = findNearestLineMatch(parkingStand.parkingConnector, surfaceEntries);
+
+    if (!parkingSurfaceMatch) {
+        return null;
+    }
+
+    const orderedRunwayPoints = getOrderedRunwayPoints(selectedRunwayEntry, threshold.point);
+    const runwayProfile = createRouteProfile(orderedRunwayPoints);
+    const taxiwayExitCandidate = getRunwayTaxiwayExitCandidate(selectedRunwayEntry, threshold.point, taxiwayLines);
+    const holdExitCandidate = getRunwayHoldExitCandidate(selectedRunwayEntry, threshold.point, holdEntries, taxiwayLines);
+    const fallbackExitIndex = orderedRunwayPoints.length > 2
+        ? orderedRunwayPoints.length - 2
+        : Math.max(orderedRunwayPoints.length - 1, 0);
+    const fallbackExitPoint = orderedRunwayPoints[fallbackExitIndex] ?? runwayMatch.projectedPoint;
+    const preferredExitPoint = taxiwayExitCandidate?.runwayExitPoint ?? holdExitCandidate?.runwayExitPoint ?? fallbackExitPoint;
+    const preferredExitProgress = taxiwayExitCandidate?.progress ?? holdExitCandidate?.progress ?? getRouteProgressForPoint(runwayProfile, preferredExitPoint).progress;
+    const preferredExitSurfaceMatch = taxiwayExitCandidate?.taxiwayMatch
+        ?? holdExitCandidate?.taxiwayMatch
+        ?? findNearestLineMatch(preferredExitPoint, taxiwayLines)
+        ?? taxiwayExitCandidate?.runwayMatch
+        ?? getBestLineMatch(preferredExitPoint, selectedRunwayEntry)
+        ?? runwayMatch;
+    const surfaceRoute = buildGraphRouteBetweenMatches(surfaceRouteGraph, preferredExitSurfaceMatch, parkingSurfaceMatch)
+        ?? buildGraphRouteBetweenMatches(surfaceRouteGraph, runwayMatch, parkingSurfaceMatch);
+
+    if (!surfaceRoute?.length) {
+        return null;
+    }
+
+    const runwayRolloutRoute = buildRunwayRolloutRoute(
+        orderedRunwayPoints,
+        runwayProfile,
+        runwayMatch.projectedPoint,
+        preferredExitProgress
+    );
+    const curvedApproach = buildCurvedArrivalApproach(
+        runwayMatch.projectedPoint,
+        threshold.heading,
+        selectedRunwayEntry.name
+    );
+    const route = dedupeRoutePoints([
+        ...curvedApproach.approachPoints,
+        ...runwayRolloutRoute,
+        ...buildBridgeRoute(preferredExitPoint, preferredExitSurfaceMatch.projectedPoint),
+        ...surfaceRoute,
+        ...buildBridgeRoute(parkingSurfaceMatch.projectedPoint, parkingStand.parkingConnector),
+        ...[...parkingStand.parkingRoute].reverse()
+    ]);
+
+    if (route.length < 2 || !measurePolylineLength(route)) {
+        return null;
+    }
+
+    const routeProfile = createRouteProfile(route);
+    const runwayStart = getRouteProgressForPoint(routeProfile, runwayMatch.projectedPoint).progress;
+    const runwayExitProgress = getRouteProgressForPoint(routeProfile, preferredExitPoint).progress;
+    const minimumRolloutProgress = runwayStart + ((240 / 111320) / Math.max(routeProfile.totalLength, 1e-6));
+    const arrivalRolloutEnd = Math.min(Math.max(runwayExitProgress, minimumRolloutProgress), 0.985);
+
+    return {
+        route,
+        parkingId: parkingStand.parkingMatch.entry.id,
+        parkingName: parkingStand.parkingMatch.entry.name ?? "Parking Line",
+        runwayName: selectedRunwayEntry.name ?? null,
+        pushbackEnd: 0,
+        holdProgress: 0,
+        runwayStart,
+        arrivalRolloutEnd,
+        arrivalOrigin: curvedApproach.arrivalOrigin,
+        approachGuideRoute: curvedApproach.approachPoints
+    };
+}
+
 function buildReturnToGateRoute(origin, parkingEntries, taxiwayLines, runwayEntries, surfaceRouteGraph, preferredParkingId, gateOrigin = origin) {
     const parkingStand = resolveParkingStand(gateOrigin, parkingEntries, taxiwayLines, new Set(), preferredParkingId);
 
@@ -1372,10 +1828,17 @@ function getDepartureSpeed(plane) {
     const speedMultiplier = plane.speedMultiplier ?? 1;
 
     if (plane.operationType === "arrival" && plane.returningToGate) {
-        const rolloutEnd = plane.arrivalRolloutEnd ?? 0;
+        const runwayStart = plane.runwayStart ?? 0;
+        const rolloutEnd = plane.arrivalRolloutEnd ?? runwayStart;
+
+        if (plane.progress < runwayStart) {
+            return (plane.arrivalApproachSpeed ?? plane.arrivalLandingSpeed ?? plane.runwaySpeed) * speedMultiplier;
+        }
 
         if (plane.progress < rolloutEnd) {
-            const rolloutProgress = rolloutEnd > 0 ? plane.progress / rolloutEnd : 1;
+            const rolloutProgress = rolloutEnd > runwayStart
+                ? (plane.progress - runwayStart) / (rolloutEnd - runwayStart)
+                : 1;
             const arrivalSpeed = plane.arrivalLandingSpeed ?? plane.runwaySpeed;
             const rolloutSpeed = arrivalSpeed + ((plane.taxiSpeed - arrivalSpeed) * rolloutProgress);
             return rolloutSpeed * speedMultiplier;
@@ -1405,6 +1868,10 @@ function getDepartureSpeed(plane) {
 }
 
 function isPlaneOnRunway(plane) {
+    if (plane.operationType === "arrival" && plane.returningToGate) {
+        return plane.progress >= plane.runwayStart && plane.progress < (plane.arrivalRolloutEnd ?? plane.runwayStart);
+    }
+
     return plane.progress >= plane.runwayStart && plane.progress < 0.995;
 }
 
@@ -1864,6 +2331,7 @@ function setupMap() {
         centerlines: L.featureGroup().addTo(map),
         other: L.featureGroup().addTo(map)
     };
+    const arrivalGuideLayer = L.featureGroup().addTo(map);
     const kmlCounts = {
         runways: 0,
         taxiways: 0,
@@ -2032,6 +2500,7 @@ function setupMap() {
         const runwayChoices = [...new Set(runwayLineSets.map((entry) => entry.name).filter(Boolean))];
         const planeControlList = document.getElementById("plane-control-list");
         const planeSearchInput = document.getElementById("plane-search-input");
+        const manualArrivalSpawnButton = document.getElementById("manual-arrival-spawn");
         let lastPlaneControlPanelMarkup = "";
         let planeSearchQuery = "";
 
@@ -2224,18 +2693,17 @@ function setupMap() {
             const inboundPlanes = visiblePlanes.filter((plane) => plane.operationType === "arrival" && plane.returningToGate);
             const groundPlanes = visiblePlanes.filter((plane) => !(plane.operationType === "arrival" && plane.returningToGate));
             const buildSectionMarkup = (title, subtitle, sectionPlanes) => {
-                if (!sectionPlanes.length) {
-                    return "";
-                }
-
                 return `
                     <section class="plane-control-section">
                         <div class="plane-control-section-heading">
                             <strong>${title}</strong>
+                            <span class="plane-control-section-count">${sectionPlanes.length}</span>
                             <small>${subtitle}</small>
                         </div>
                         <div class="plane-control-section-list">
-                            ${sectionPlanes.map((plane) => createPlaneControlCardContent(plane)).join("")}
+                            ${sectionPlanes.length
+                                ? sectionPlanes.map((plane) => createPlaneControlCardContent(plane)).join("")
+                                : `<div class="plane-control-section-empty">No aircraft in this group.</div>`}
                         </div>
                     </section>
                 `;
@@ -2341,6 +2809,7 @@ function setupMap() {
         }
 
         function setPlaneParked(plane) {
+            clearPlaneApproachGuide(plane);
             plane.route = null;
             plane.routeProfile = null;
             plane.parkingId = plane.standbyParkingId;
@@ -2364,6 +2833,7 @@ function setupMap() {
         }
 
         function applyDepartureRouteToPlane(plane, departureRoute, nextProgress = 0) {
+            clearPlaneApproachGuide(plane);
             plane.route = departureRoute.route;
             plane.routeProfile = createRouteProfile(departureRoute.route);
             plane.parkingId = departureRoute.parkingId;
@@ -2475,6 +2945,61 @@ function setupMap() {
             });
         }
 
+        function clearPlaneApproachGuide(plane) {
+            if (!plane.approachGuideLine) {
+                return;
+            }
+
+            plane.approachGuideLine.remove();
+            plane.approachGuideLine = null;
+        }
+
+        function getArrivalGuideLinePoints(plane) {
+            if (
+                plane.operationType !== "arrival"
+                || !plane.returningToGate
+                || !plane.routeProfile?.totalLength
+                || plane.progress >= (plane.arrivalRolloutEnd ?? 0)
+            ) {
+                return [];
+            }
+
+            const startProgress = Math.max(plane.progress, 0);
+            const endProgress = Math.max(plane.arrivalRolloutEnd ?? 0, startProgress);
+            const sampleCount = Math.max(14, Math.ceil((endProgress - startProgress) * 42));
+
+            return Array.from({ length: sampleCount + 1 }, (_, index) => {
+                const progress = startProgress + ((endProgress - startProgress) * (index / sampleCount));
+                const point = interpolateRouteProfile(plane.routeProfile, progress);
+                return [point.lat, point.lng];
+            });
+        }
+
+        function syncArrivalGuideLine(plane) {
+            const guidePoints = getArrivalGuideLinePoints(plane);
+
+            if (!guidePoints.length) {
+                clearPlaneApproachGuide(plane);
+                return;
+            }
+
+            if (!plane.approachGuideLine) {
+                plane.approachGuideLine = L.polyline(guidePoints, {
+                    color: arrivalApproachLineColor,
+                    opacity: 0.9,
+                    weight: 2.2,
+                    dashArray: "10 10",
+                    lineCap: "round",
+                    lineJoin: "round",
+                    interactive: false
+                }).addTo(arrivalGuideLayer);
+
+                return;
+            }
+
+            plane.approachGuideLine.setLatLngs(guidePoints);
+        }
+
         registerScalableLayer(L.polyline(taxiwayLineSets, {
             color: "#111111",
             opacity: 0.84,
@@ -2494,7 +3019,7 @@ function setupMap() {
         }).addTo(kmlGroups.taxiways), 2.6).bindPopup("<strong>Taxiways</strong><br>Taxiway network from Montreal YUL.kml");
 
         const reservedParkingIds = new Set();
-        const startupPlaneFeed = createStartupTraffic(parkingLineSets, runwayLineSets);
+        const startupPlaneFeed = createStartupTraffic(parkingLineSets, runwayLineSets, startupOccupancyRatio, 0);
         const parkingEntryById = new Map(parkingLineSets.map((entry) => [entry.id, entry]));
         const animatedPlanes = startupPlaneFeed.map((plane, index) => {
             const gateCoords = plane.gateCoords ?? airportCenter;
@@ -2540,8 +3065,12 @@ function setupMap() {
                 runwaySpeed: Math.max(plane.speed * 5.2, 0.031),
                 takeoffAcceleration: Math.max(plane.speed * 9.5, 0.13),
                 abortSpeed: Math.max(plane.speed * 0.26, 0.0012),
+                arrivalApproachSpeed: Math.max(plane.speed * 10.2, 0.044),
                 arrivalLandingSpeed: Math.max(plane.speed * 7.6, 0.028),
                 arrivalRolloutEnd: 0,
+                arrivalOrigin: plane.arrivalOrigin ?? null,
+                arrivalRunwayName: plane.arrivalRunwayName ?? null,
+                approachGuideLine: null,
                 holdDelayMs: 350 + (index * 40),
                 holdStartedAt: null,
                 progress: initialProgress,
@@ -2553,33 +3082,36 @@ function setupMap() {
             };
 
             if (isArrival) {
-                const returnRoute = buildReturnToGateRoute(
-                    plane.arrivalOrigin,
+                const arrivalRoute = buildArrivalRoute(
                     parkingLineSets,
                     taxiwayLineSets,
                     runwayLineSets,
+                    holdLineSets,
                     surfaceRouteGraph,
-                    plane.preferredParkingId,
-                    gateCoords
+                    {
+                        preferredParkingId: plane.preferredParkingId,
+                        preferredRunwayName: plane.arrivalRunwayName,
+                        gateOrigin: gateCoords
+                    }
                 );
 
-                if (!returnRoute) {
+                if (!arrivalRoute) {
                     marker.remove();
                     return null;
                 }
 
-                animatedPlane.route = returnRoute.route;
-                animatedPlane.routeProfile = createRouteProfile(returnRoute.route);
-                animatedPlane.parkingId = returnRoute.parkingId;
-                animatedPlane.parkingName = returnRoute.parkingName;
-                animatedPlane.runwayName = plane.arrivalRunwayName;
-                animatedPlane.pushbackEnd = 0;
-                animatedPlane.holdProgress = 0;
-                animatedPlane.runwayStart = 1;
-                animatedPlane.arrivalRolloutEnd = Math.min(0.22, Math.max(0.08, (260 / 111320) / Math.max(animatedPlane.routeProfile.totalLength, 1e-6)));
+                animatedPlane.route = arrivalRoute.route;
+                animatedPlane.routeProfile = createRouteProfile(arrivalRoute.route);
+                animatedPlane.parkingId = arrivalRoute.parkingId;
+                animatedPlane.parkingName = arrivalRoute.parkingName;
+                animatedPlane.runwayName = arrivalRoute.runwayName;
+                animatedPlane.runwayStart = arrivalRoute.runwayStart;
+                animatedPlane.arrivalRolloutEnd = arrivalRoute.arrivalRolloutEnd;
+                animatedPlane.arrivalOrigin = arrivalRoute.arrivalOrigin;
                 animatedPlane.progress = 0;
                 const initialArrivalPosition = interpolateRouteProfile(animatedPlane.routeProfile, 0);
                 animatedPlane.marker.setLatLng(initialArrivalPosition);
+                syncArrivalGuideLine(animatedPlane);
             }
 
             animatedPlane.marker.setIcon(createPlaneMarkerIcon(animatedPlane.callsign, getPlaneHeading(animatedPlane), map.getZoom()));
@@ -2588,9 +3120,220 @@ function setupMap() {
 
             return animatedPlane;
         }).filter(Boolean);
+        const planeByCallsign = new Map(animatedPlanes.map((plane) => [plane.callsign, plane]));
+        let nextArrivalRunwayIndex = 0;
+
+        function isParkingStandOccupied(plane) {
+            if (!plane.standbyParkingId) {
+                return false;
+            }
+
+            if (plane.operationType === "arrival" && plane.returningToGate) {
+                return true;
+            }
+
+            if (!plane.routeProfile?.totalLength || !plane.hasAssignedRunway) {
+                return true;
+            }
+
+            return plane.progress < Math.max(plane.pushbackEnd + 0.01, 0.02);
+        }
+
+        function createUniqueAirlineCallsign(airlineCode) {
+            for (let attempt = 0; attempt < 32; attempt += 1) {
+                const numericSuffix = 100 + Math.floor(Math.random() * 900);
+                const callsign = `${airlineCode}${numericSuffix}`;
+
+                if (!planeByCallsign.has(callsign)) {
+                    return callsign;
+                }
+            }
+
+            return `${airlineCode}${Date.now().toString().slice(-4)}`;
+        }
+
+        function spawnArrivalPlane() {
+            const occupiedParkingIds = new Set(
+                animatedPlanes
+                    .filter((plane) => isParkingStandOccupied(plane))
+                    .map((plane) => plane.standbyParkingId)
+                    .filter(Boolean)
+            );
+            const availableParkingEntries = shuffleItems(
+                parkingLineSets.filter((entry) => !occupiedParkingIds.has(entry.id))
+            );
+
+            if (!availableParkingEntries.length || !runwayLineSets.length) {
+                return;
+            }
+
+            const activeArrivalRunways = new Set(
+                animatedPlanes
+                    .filter((plane) => {
+                        return plane.operationType === "arrival"
+                            && plane.returningToGate
+                            && plane.progress < (plane.arrivalRolloutEnd ?? 1);
+                    })
+                    .map((plane) => plane.runwayName)
+                    .filter(Boolean)
+            );
+            const runwayCandidates = runwayLineSets.map((_, offset) => {
+                return runwayLineSets[(nextArrivalRunwayIndex + offset) % runwayLineSets.length];
+            });
+            const candidateRunway = runwayCandidates.find((entry) => !activeArrivalRunways.has(entry.name))
+                ?? null;
+
+            if (!candidateRunway) {
+                return;
+            }
+
+            nextArrivalRunwayIndex = (runwayLineSets.indexOf(candidateRunway) + 1) % runwayLineSets.length;
+
+            let spawnSelection = null;
+
+            runwayCandidates.forEach((runwayEntry) => {
+                if (spawnSelection) {
+                    return;
+                }
+
+                availableParkingEntries.forEach((parkingEntry) => {
+                    if (spawnSelection) {
+                        return;
+                    }
+
+                    const standPoint = interpolatePath(getLinePoints(parkingEntry), 0.5);
+                    const nearestGate = getNearestGateMarker(standPoint);
+                    const gateLabel = nearestGate?.name?.replace(/^Gate\s+/i, "") ?? "Stand";
+                    const [arrivalTemplate] = AssignAircraftModels([
+                        {
+                            callsign: "ARRIVAL",
+                            gate: gateLabel,
+                            gateCoords: nearestGate?.coords ?? standPoint,
+                            preferredParkingId: parkingEntry.id,
+                            operationType: "arrival",
+                            arrivalRunwayName: runwayEntry.name,
+                            speed: 0.0042 + (Math.random() * 0.001)
+                        }
+                    ]);
+
+                    if (!arrivalTemplate) {
+                        return;
+                    }
+
+                    const arrivalPlane = {
+                        ...arrivalTemplate,
+                        callsign: createUniqueAirlineCallsign(arrivalTemplate.airlineCode ?? "FLT")
+                    };
+                    const gateCoords = arrivalPlane.gateCoords ?? airportCenter;
+                    const preferredParkingEntry = parkingEntryById.get(arrivalPlane.preferredParkingId);
+                    const parkingStand = buildParkingStandFromEntry(preferredParkingEntry, taxiwayLineSets)
+                        ?? resolveParkingStand(gateCoords, parkingLineSets, taxiwayLineSets, reservedParkingIds, arrivalPlane.preferredParkingId);
+
+                    if (!parkingStand) {
+                        return;
+                    }
+
+                    const arrivalRoute = buildArrivalRoute(
+                        parkingLineSets,
+                        taxiwayLineSets,
+                        runwayLineSets,
+                        holdLineSets,
+                        surfaceRouteGraph,
+                        {
+                            preferredParkingId: arrivalPlane.preferredParkingId,
+                            preferredRunwayName: arrivalPlane.arrivalRunwayName,
+                            gateOrigin: gateCoords
+                        }
+                    );
+
+                    if (!arrivalRoute) {
+                        return;
+                    }
+
+                    spawnSelection = {
+                        arrivalPlane,
+                        gateCoords,
+                        parkingStand,
+                        arrivalRoute
+                    };
+                });
+            });
+
+            if (!spawnSelection) {
+                return;
+            }
+
+            const {
+                arrivalPlane,
+                gateCoords,
+                parkingStand,
+                arrivalRoute
+            } = spawnSelection;
+
+            const marker = L.marker({ lat: gateCoords[0], lng: gateCoords[1] }, {
+                icon: createPlaneMarkerIcon(arrivalPlane.callsign, parkingStand.spawnHeading, map.getZoom()),
+                zIndexOffset: 6000,
+                keyboard: false
+            }).addTo(movingPlaneLayer);
+            const animatedPlane = {
+                ...arrivalPlane,
+                marker,
+                gateCoords,
+                standbyCoords: parkingStand.spawnPoint,
+                standbyHeading: parkingStand.spawnHeading,
+                route: null,
+                routeProfile: null,
+                parkingId: parkingStand.parkingMatch.entry.id,
+                parkingName: parkingStand.parkingMatch.entry.name ?? "Parking Line",
+                standbyParkingId: parkingStand.parkingMatch.entry.id,
+                standbyParkingName: parkingStand.parkingMatch.entry.name ?? "Parking Line",
+                runwayName: null,
+                pushbackEnd: 0,
+                holdProgress: 0,
+                runwayStart: 1,
+                pushbackSpeed: Math.max(arrivalPlane.speed * 0.42, 0.0016),
+                taxiSpeed: Math.max(arrivalPlane.speed * 0.58, 0.0022),
+                lineupSpeed: Math.max(arrivalPlane.speed * 0.34, 0.0014),
+                runwaySpeed: Math.max(arrivalPlane.speed * 5.2, 0.031),
+                takeoffAcceleration: Math.max(arrivalPlane.speed * 9.5, 0.13),
+                abortSpeed: Math.max(arrivalPlane.speed * 0.26, 0.0012),
+                arrivalApproachSpeed: Math.max(arrivalPlane.speed * 10.2, 0.044),
+                arrivalLandingSpeed: Math.max(arrivalPlane.speed * 7.6, 0.028),
+                arrivalRolloutEnd: 0,
+                arrivalOrigin: null,
+                arrivalRunwayName: arrivalPlane.arrivalRunwayName,
+                approachGuideLine: null,
+                holdDelayMs: 350 + (animatedPlanes.length * 40),
+                holdStartedAt: null,
+                progress: 0,
+                direction: 1,
+                hasAssignedRunway: true,
+                returningToGate: true,
+                departureClearance: "hold-short",
+                speedMultiplier: 1
+            };
+
+            animatedPlane.route = arrivalRoute.route;
+            animatedPlane.routeProfile = createRouteProfile(arrivalRoute.route);
+            animatedPlane.parkingId = arrivalRoute.parkingId;
+            animatedPlane.parkingName = arrivalRoute.parkingName;
+            animatedPlane.runwayName = arrivalRoute.runwayName;
+            animatedPlane.runwayStart = arrivalRoute.runwayStart;
+            animatedPlane.arrivalRolloutEnd = arrivalRoute.arrivalRolloutEnd;
+            animatedPlane.arrivalOrigin = arrivalRoute.arrivalOrigin;
+            animatedPlane.marker.setLatLng(interpolateRouteProfile(animatedPlane.routeProfile, 0));
+            animatedPlane.marker.setIcon(createPlaneMarkerIcon(animatedPlane.callsign, getPlaneHeading(animatedPlane), map.getZoom()));
+
+            attachPlanePopupHandlers(animatedPlane);
+            syncArrivalGuideLine(animatedPlane);
+
+            animatedPlanes.push(animatedPlane);
+            planeByCallsign.set(animatedPlane.callsign, animatedPlane);
+            animatedPlane.allPlanes = animatedPlanes;
+            renderPlaneControlPanel(animatedPlanes);
+        }
 
         if (planeControlList) {
-            const planeByCallsign = new Map(animatedPlanes.map((plane) => [plane.callsign, plane]));
             let hoveredPlane = null;
             let hoveredPlaneCard = null;
 
@@ -2699,6 +3442,17 @@ function setupMap() {
         });
         renderPlaneControlPanel(animatedPlanes);
 
+        if (manualArrivalSpawnButton) {
+            manualArrivalSpawnButton.addEventListener("click", () => {
+                spawnArrivalPlane();
+            });
+        }
+
+        window.setTimeout(() => {
+            spawnArrivalPlane();
+            window.setInterval(spawnArrivalPlane, arrivalSpawnIntervalMs);
+        }, arrivalSpawnIntervalMs);
+
         if (animatedPlanes.length) {
             const refreshPlaneIcons = () => {
                 const zoom = map.getZoom();
@@ -2706,6 +3460,7 @@ function setupMap() {
                 animatedPlanes.forEach((plane) => {
                     const heading = getPlaneHeading(plane);
                     plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, heading, zoom));
+                    syncArrivalGuideLine(plane);
                 });
 
                 renderPlaneControlPanel(animatedPlanes);
@@ -2814,6 +3569,7 @@ function setupMap() {
                     const heading = getPlaneHeading(plane);
                     plane.marker.setLatLng(position);
                     plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, heading, map.getZoom()));
+                    syncArrivalGuideLine(plane);
 
                     if (plane.marker.isPopupOpen()) {
                         updatePlanePopup(plane, true);
@@ -2838,6 +3594,7 @@ function setupMap() {
         kmlGroups.holds,
         kmlGroups.centerlines,
         kmlGroups.runways,
+        arrivalGuideLayer,
         movingPlaneLayer
     ].forEach((group, index) => {
         group.eachLayer((layer) => {
