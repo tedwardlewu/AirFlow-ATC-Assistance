@@ -206,6 +206,7 @@ const arrivalSpawnDistanceMeters = 15000;
 const arrivalApproachLineColor = "#6cff9d";
 const minimumArrivalRunwayExitProgress = 0.14;
 const preferredArrivalRunwayExitProgress = 0.24;
+const extendedArrivalRunwayExitProgress06R = 0.8;
 
 function getDirectChildrenByName(element, name) {
     return Array.from(element.children).filter((child) => child.localName === name);
@@ -1417,6 +1418,12 @@ function getArrivalRunwayThreshold(runwayEntry) {
     };
 }
 
+function getPreferredArrivalExitProgress(runwayEntry) {
+    return getArrivalRunwayDesignation(runwayEntry) === "06R"
+        ? extendedArrivalRunwayExitProgress06R
+        : preferredArrivalRunwayExitProgress;
+}
+
 function getOrderedRunwayPoints(runwayEntry, thresholdPoint) {
     const runwayPoints = [...(getLinePoints(runwayEntry) ?? [])];
 
@@ -1585,7 +1592,17 @@ function getRunwayTaxiwayExitCandidate(runwayEntry, thresholdPoint, taxiwayLines
         }, null);
     }).filter(Boolean);
 
-    return dedupedCandidates.at(-2)
+    if (getArrivalRunwayDesignation(runwayEntry) !== "06R") {
+        return dedupedCandidates.at(-2)
+            ?? dedupedCandidates.at(-1)
+            ?? null;
+    }
+
+    const preferredCandidate = dedupedCandidates.find((candidate) => {
+        return candidate.progress >= getPreferredArrivalExitProgress(runwayEntry);
+    });
+
+    return preferredCandidate
         ?? dedupedCandidates.at(-1)
         ?? null;
 }
@@ -1653,7 +1670,13 @@ function getRunwayHoldExitCandidate(runwayEntry, thresholdPoint, holdEntries, ta
         return null;
     }
 
-    return holdCandidates[0] ?? null;
+    if (getArrivalRunwayDesignation(runwayEntry) !== "06R") {
+        return holdCandidates[0] ?? null;
+    }
+
+    return holdCandidates.find((candidate) => {
+        return candidate.progress >= getPreferredArrivalExitProgress(runwayEntry);
+    }) ?? holdCandidates.at(-1) ?? null;
 }
 
 function buildRunwayRolloutRoute(runwayPoints, runwayProfile, runwayStartPoint, exitProgress) {
@@ -1848,6 +1871,7 @@ function getDepartureSpeed(plane) {
     if (plane.operationType === "arrival" && plane.returningToGate) {
         const runwayStart = plane.runwayStart ?? 0;
         const rolloutEnd = plane.arrivalRolloutEnd ?? runwayStart;
+        const isRunway06RArrival = (plane.arrivalRunwayName ?? plane.runwayName ?? "").includes("24L / 06R");
 
         if (plane.progress < runwayStart) {
             return (plane.arrivalApproachSpeed ?? plane.arrivalLandingSpeed ?? plane.runwaySpeed) * speedMultiplier;
@@ -1858,7 +1882,13 @@ function getDepartureSpeed(plane) {
                 ? (plane.progress - runwayStart) / (rolloutEnd - runwayStart)
                 : 1;
             const arrivalSpeed = plane.arrivalLandingSpeed ?? plane.runwaySpeed;
-            const rolloutSpeed = arrivalSpeed + ((plane.taxiSpeed - arrivalSpeed) * rolloutProgress);
+            const decelerationProgress = isRunway06RArrival
+                ? Math.pow(rolloutProgress, 1.18)
+                : Math.min(Math.pow(rolloutProgress / 0.56, 1.12), 1);
+            const easedDeceleration = isRunway06RArrival
+                ? decelerationProgress
+                : 1 - ((1 - decelerationProgress) ** 1.55);
+            const rolloutSpeed = arrivalSpeed + ((plane.taxiSpeed - arrivalSpeed) * easedDeceleration);
             return rolloutSpeed * speedMultiplier;
         }
 
