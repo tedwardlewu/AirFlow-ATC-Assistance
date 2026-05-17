@@ -202,7 +202,7 @@ const startupOccupancyRatio = 0.8;
 const startupInboundShare = 0.08;
 const startupOpenStandReserve = 4;
 const arrivalSpawnIntervalMs = 60000;
-const arrivalSpawnDistanceMeters = 5600;
+const arrivalSpawnDistanceMeters = 15000;
 const arrivalApproachLineColor = "#6cff9d";
 const minimumArrivalRunwayExitProgress = 0.14;
 const preferredArrivalRunwayExitProgress = 0.24;
@@ -1374,6 +1374,20 @@ function arePointsEquivalent(leftPoint, rightPoint, toleranceSquared = 1e-12) {
     return getPointDistanceSquared(leftPoint, rightPoint) <= toleranceSquared;
 }
 
+function getArrivalRunwayDesignation(runwayEntry) {
+    const designations = getRunwayDesignations(runwayEntry?.name ?? "");
+
+    if (!designations.length) {
+        return null;
+    }
+
+    if (designations.includes("06R")) {
+        return "06R";
+    }
+
+    return designations[0];
+}
+
 function getArrivalRunwayThreshold(runwayEntry) {
     const linePoints = getLinePoints(runwayEntry);
 
@@ -1381,7 +1395,7 @@ function getArrivalRunwayThreshold(runwayEntry) {
         return null;
     }
 
-    const [arrivalDesignation] = getRunwayDesignations(runwayEntry.name ?? "");
+    const arrivalDesignation = getArrivalRunwayDesignation(runwayEntry);
     const desiredHeading = getRunwayDesignationHeading(arrivalDesignation ?? "");
     const startPoint = linePoints[0];
     const endPoint = linePoints.at(-1);
@@ -1457,9 +1471,10 @@ function buildCurvedArrivalApproach(touchdownPoint, runwayHeading, runwayName) {
 
     if (isRunway06LPair) {
         const arrivalOrigin = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.98, 760, curveDirection);
-        const outerLegPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.76, 640, curveDirection);
-        const baseTurnPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.48, 320, curveDirection);
-        const finalApproachPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.18, 54, curveDirection);
+        const outerLegPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.8, 640, curveDirection);
+        const baseTurnPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.58, 300, curveDirection);
+        const centerlineJoinPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.34, 0, curveDirection);
+        const shortFinalPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.18, 0, curveDirection);
 
         return {
             arrivalOrigin,
@@ -1467,24 +1482,27 @@ function buildCurvedArrivalApproach(touchdownPoint, runwayHeading, runwayName) {
                 arrivalOrigin,
                 outerLegPoint,
                 baseTurnPoint,
-                finalApproachPoint,
+                centerlineJoinPoint,
+                shortFinalPoint,
                 touchdownPoint
             ]
         };
     }
 
-    const finalApproachPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.14, 0, curveDirection);
-    const innerCurvePoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.32, 210, curveDirection);
-    const outerCurvePoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.62, 520, curveDirection);
-    const arrivalOrigin = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.88, 520, curveDirection);
+    const shortFinalPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.14, 0, curveDirection);
+    const centerlineJoinPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.32, 0, curveDirection);
+    const baseTurnPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.52, 240, curveDirection);
+    const outerCurvePoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.76, 520, curveDirection);
+    const arrivalOrigin = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.96, 520, curveDirection);
 
     return {
         arrivalOrigin,
         approachPoints: [
             arrivalOrigin,
             outerCurvePoint,
-            innerCurvePoint,
-            finalApproachPoint,
+            baseTurnPoint,
+            centerlineJoinPoint,
+            shortFinalPoint,
             touchdownPoint
         ]
     };
@@ -2964,9 +2982,9 @@ function setupMap() {
                 return [];
             }
 
-            const startProgress = Math.max(plane.progress, 0);
+            const startProgress = 0;
             const endProgress = Math.max(plane.arrivalRolloutEnd ?? 0, startProgress);
-            const sampleCount = Math.max(14, Math.ceil((endProgress - startProgress) * 42));
+            const sampleCount = Math.max(18, Math.ceil((endProgress - startProgress) * 42));
 
             return Array.from({ length: sampleCount + 1 }, (_, index) => {
                 const progress = startProgress + ((endProgress - startProgress) * (index / sampleCount));
