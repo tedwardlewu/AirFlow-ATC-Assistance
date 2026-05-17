@@ -207,6 +207,9 @@ const arrivalApproachLineColor = "#6cff9d";
 const minimumArrivalRunwayExitProgress = 0.14;
 const preferredArrivalRunwayExitProgress = 0.24;
 const extendedArrivalRunwayExitProgress06R = 0.8;
+const goAroundPatternStraightAheadMeters = 2400;
+const goAroundPatternOuterRadiusMeters = 4200;
+const goAroundOrbitSamples = 48;
 
 function getDirectChildrenByName(element, name) {
     return Array.from(element.children).filter((child) => child.localName === name);
@@ -1378,15 +1381,7 @@ function arePointsEquivalent(leftPoint, rightPoint, toleranceSquared = 1e-12) {
 function getArrivalRunwayDesignation(runwayEntry) {
     const designations = getRunwayDesignations(runwayEntry?.name ?? "");
 
-    if (!designations.length) {
-        return null;
-    }
-
-    if (designations.includes("06R")) {
-        return "06R";
-    }
-
-    return designations[0];
+    return designations[0] ?? null;
 }
 
 function getArrivalRunwayThreshold(runwayEntry) {
@@ -1804,16 +1799,20 @@ function buildArrivalRoute(parkingEntries, taxiwayLines, runwayEntries, holdEntr
     const runwayExitProgress = getRouteProgressForPoint(routeProfile, preferredExitPoint).progress;
     const minimumRolloutProgress = runwayStart + ((240 / 111320) / Math.max(routeProfile.totalLength, 1e-6));
     const arrivalRolloutEnd = Math.min(Math.max(runwayExitProgress, minimumRolloutProgress), 0.985);
+    const goAroundCutoffPoint = curvedApproach.approachPoints.at(-3) ?? curvedApproach.approachPoints[0];
+    const goAroundCutoffProgress = getRouteProgressForPoint(routeProfile, goAroundCutoffPoint).progress;
 
     return {
         route,
         parkingId: parkingStand.parkingMatch.entry.id,
         parkingName: parkingStand.parkingMatch.entry.name ?? "Parking Line",
         runwayName: selectedRunwayEntry.name ?? null,
+        arrivalRunwayDesignation: threshold.designation ?? null,
         pushbackEnd: 0,
         holdProgress: 0,
         runwayStart,
         arrivalRolloutEnd,
+        goAroundCutoffProgress,
         arrivalOrigin: curvedApproach.arrivalOrigin,
         approachGuideRoute: curvedApproach.approachPoints
     };
@@ -1871,10 +1870,22 @@ function getDepartureSpeed(plane) {
     if (plane.operationType === "arrival" && plane.returningToGate) {
         const runwayStart = plane.runwayStart ?? 0;
         const rolloutEnd = plane.arrivalRolloutEnd ?? runwayStart;
-        const isRunway06RArrival = (plane.arrivalRunwayName ?? plane.runwayName ?? "").includes("24L / 06R");
+        const goAroundEndProgress = plane.goAroundEndProgress ?? 0;
+        const arrivalDesignation = plane.arrivalRunwayDesignation
+            ?? getRunwayDesignations(plane.arrivalRunwayName ?? plane.runwayName ?? "")[0]
+            ?? null;
+        const isRunway06RArrival = arrivalDesignation === "06R";
 
         if (plane.progress < runwayStart) {
-            return (plane.arrivalApproachSpeed ?? plane.arrivalLandingSpeed ?? plane.runwaySpeed) * speedMultiplier;
+            const approachSpeed = plane.arrivalApproachSpeed ?? plane.arrivalLandingSpeed ?? plane.runwaySpeed;
+            const approachCruiseSpeed = plane.taxiSpeed + ((approachSpeed - plane.taxiSpeed) * 0.16);
+
+            if (plane.goAroundUsed && plane.progress < goAroundEndProgress) {
+                const goAroundCruiseSpeed = plane.taxiSpeed + ((approachSpeed - plane.taxiSpeed) * 0.1);
+                return Math.min(goAroundCruiseSpeed, approachCruiseSpeed) * speedMultiplier;
+            }
+
+            return approachCruiseSpeed * speedMultiplier;
         }
 
         if (plane.progress < rolloutEnd) {
@@ -2555,6 +2566,7 @@ function setupMap() {
         function createPlaneActionMarkup(plane) {
             const isArrival = plane.operationType === "arrival" && plane.returningToGate;
             const hasRunwayAssignment = plane.hasAssignedRunway && !plane.returningToGate && !isArrival;
+            const canGoAround = isArrival && canPlaneGoAround(plane);
             const runwayButtons = isArrival
                 ? ""
                 : runwayChoices.map((runwayName) => {
@@ -2592,6 +2604,13 @@ function setupMap() {
                     </button>
                 </div>
             `;
+            const goAroundAction = isArrival
+                ? `
+                    <button type="button" class="plane-action-button" data-go-around="true" ${canGoAround ? "" : "disabled"}>
+                        Go around
+                    </button>
+                `
+                : "";
             const abortAction = plane.hasAssignedRunway && plane.progress >= plane.runwayStart && !plane.returningToGate && !isArrival
                 ? `
                     <button type="button" class="plane-action-button abort" data-abort-takeoff="true">
@@ -2605,10 +2624,15 @@ function setupMap() {
                 clearanceControls,
                 speedPercent,
                 speedControls,
+                goAroundAction,
                 abortAction,
                 hint: hasRunwayAssignment
                     ? isArrival
-                        ? `Inbound via ${plane.arrivalRunwayName ?? "arrival runway"}, taxiing to stand.`
+                        ? canGoAround
+                            ? `Inbound via ${plane.arrivalRunwayName ?? "arrival runway"}. Go-around available before the black centerline segment.`
+                            : plane.goAroundUsed
+                                ? `Inbound via ${plane.arrivalRunwayName ?? "arrival runway"}. Go-around already used for this approach.`
+                            : `Inbound via ${plane.arrivalRunwayName ?? "arrival runway"}. Past the black centerline segment, landing continues.`
                         : {
                         "hold-short": "Hold short before the purple hold line.",
                         "line-up": "Line up on the runway and wait.",
@@ -2674,6 +2698,7 @@ function setupMap() {
                     <small>Gate ${plane.gate} · ${plane.parkingName}</small>
                     ${runwaySelectorMarkup}
                     ${controls.clearanceControls}
+                    ${controls.goAroundAction}
                     ${controls.speedControls}
                     <small>Speed ${controls.speedPercent}%</small>
                     ${controls.abortAction}
@@ -2721,6 +2746,7 @@ function setupMap() {
                     <small>Gate ${plane.gate} · ${plane.parkingName}</small>
                     ${runwaySelectorMarkup}
                     ${controls.clearanceControls}
+                    ${controls.goAroundAction}
                     ${controls.speedControls}
                     <small>Speed ${controls.speedPercent}%</small>
                     ${controls.abortAction}
@@ -2772,6 +2798,10 @@ function setupMap() {
         }
 
         function handlePlaneControlAction(plane, button) {
+            if (button.disabled) {
+                return;
+            }
+
             const selectedRunway = button.getAttribute("data-runway");
 
             if (selectedRunway) {
@@ -2788,6 +2818,11 @@ function setupMap() {
 
             if (button.hasAttribute("data-abort-takeoff")) {
                 abortPlaneTakeoff(plane);
+                return;
+            }
+
+            if (button.hasAttribute("data-go-around")) {
+                triggerPlaneGoAround(plane);
                 return;
             }
 
@@ -2836,6 +2871,105 @@ function setupMap() {
             }
         }
 
+        function canPlaneGoAround(plane) {
+            if (
+                plane.operationType !== "arrival"
+                || !plane.returningToGate
+                || !plane.routeProfile?.totalLength
+                || plane.goAroundUsed
+            ) {
+                return false;
+            }
+
+            const runwayStart = plane.runwayStart ?? 0;
+            const goAroundCutoffProgress = Math.min(plane.goAroundCutoffProgress ?? runwayStart, runwayStart);
+
+            return plane.progress < goAroundCutoffProgress;
+        }
+
+        function buildGoAroundOrbitPoints(startBearing, endBearing, clockwise) {
+            const orbitSweep = clockwise
+                ? normalizeHeading(endBearing - startBearing) + 360
+                : -(normalizeHeading(startBearing - endBearing) + 360);
+
+            return Array.from({ length: goAroundOrbitSamples }, (_, index) => {
+                const progress = (index + 1) / goAroundOrbitSamples;
+                const bearing = normalizeHeading(startBearing + (orbitSweep * progress));
+                return projectPointByHeading(airportCenter, bearing, goAroundPatternOuterRadiusMeters);
+            });
+        }
+
+        function buildGoAroundPattern(startPoint, heading, runwayName, rejoinPoint) {
+            const patternSide = getArrivalCurveDirection(runwayName ?? "");
+            const straightAheadPoint = projectPointByHeading(startPoint, heading, goAroundPatternStraightAheadMeters);
+            const orbitEntryBearing = getHeadingBetweenPoints(airportCenter, straightAheadPoint);
+            const orbitExitBearing = getHeadingBetweenPoints(airportCenter, rejoinPoint);
+            const orbitEntryPoint = projectPointByHeading(airportCenter, orbitEntryBearing, goAroundPatternOuterRadiusMeters);
+            const orbitPoints = buildGoAroundOrbitPoints(orbitEntryBearing, orbitExitBearing, patternSide > 0);
+
+            return dedupeRoutePoints([
+                startPoint,
+                straightAheadPoint,
+                orbitEntryPoint,
+                ...orbitPoints,
+                rejoinPoint
+            ]);
+        }
+
+        function triggerPlaneGoAround(plane) {
+            if (!canPlaneGoAround(plane)) {
+                return;
+            }
+
+            const previousRouteProfile = plane.routeProfile;
+            const currentPointLatLng = interpolateRouteProfile(plane.routeProfile, plane.progress);
+            const currentPoint = [currentPointLatLng.lat, currentPointLatLng.lng];
+            const rejoinRoute = [...(previousRouteProfile?.points ?? [])];
+
+            if (rejoinRoute.length < 2) {
+                return;
+            }
+
+            const patternRoute = buildGoAroundPattern(
+                currentPoint,
+                getPlaneHeading(plane),
+                plane.arrivalRunwayName ?? plane.runwayName,
+                rejoinRoute[0]
+            );
+            const runwayStartPoint = interpolateRouteProfile(previousRouteProfile, plane.runwayStart ?? 1);
+            const rolloutEndPoint = interpolateRouteProfile(previousRouteProfile, plane.arrivalRolloutEnd ?? 1);
+            const goAroundCutoffPoint = interpolateRouteProfile(
+                previousRouteProfile,
+                Math.min(plane.goAroundCutoffProgress ?? plane.runwayStart ?? 0, plane.runwayStart ?? 0)
+            );
+            const route = dedupeRoutePoints([
+                ...patternRoute,
+                ...rejoinRoute
+            ]);
+
+            if (route.length < 2 || !measurePolylineLength(route)) {
+                return;
+            }
+
+            plane.route = route;
+            plane.routeProfile = createRouteProfile(route);
+            plane.progress = 0;
+            plane.direction = 1;
+            plane.goAroundUsed = true;
+            plane.goAroundEndProgress = getRouteProgressForPoint(plane.routeProfile, rejoinRoute[0]).progress;
+            plane.arrivalOrigin = rejoinRoute[0] ?? currentPoint;
+            plane.runwayStart = getRouteProgressForPoint(plane.routeProfile, [runwayStartPoint.lat, runwayStartPoint.lng]).progress;
+            plane.arrivalRolloutEnd = getRouteProgressForPoint(plane.routeProfile, [rolloutEndPoint.lat, rolloutEndPoint.lng]).progress;
+            plane.goAroundCutoffProgress = getRouteProgressForPoint(
+                plane.routeProfile,
+                [goAroundCutoffPoint.lat, goAroundCutoffPoint.lng]
+            ).progress;
+            plane.marker.setLatLng({ lat: currentPoint[0], lng: currentPoint[1] });
+            plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, getPlaneHeading(plane), map.getZoom()));
+            syncArrivalGuideLine(plane);
+            updatePlanePopup(plane, true);
+        }
+
         function adjustPlaneSpeed(plane, delta) {
             const nextMultiplier = Math.min(Math.max((plane.speedMultiplier ?? 1) + (delta * 0.2), 0.4), 2.2);
             plane.speedMultiplier = Number(nextMultiplier.toFixed(2));
@@ -2873,7 +3007,11 @@ function setupMap() {
             plane.departureClearance = "hold-short";
             plane.operationType = "departure";
             plane.arrivalRolloutEnd = 0;
+            plane.goAroundCutoffProgress = 0;
+            plane.goAroundUsed = false;
+            plane.goAroundEndProgress = 0;
             plane.arrivalRunwayName = null;
+            plane.arrivalRunwayDesignation = null;
 
             plane.marker.setLatLng({ lat: plane.standbyCoords[0], lng: plane.standbyCoords[1] });
             plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, getPlaneHeading(plane), map.getZoom()));
@@ -2894,6 +3032,9 @@ function setupMap() {
             plane.progress = Math.min(Math.max(nextProgress, 0), 0.999);
             plane.hasAssignedRunway = true;
             plane.returningToGate = false;
+            plane.goAroundCutoffProgress = 0;
+            plane.goAroundUsed = false;
+            plane.goAroundEndProgress = 0;
             plane.departureClearance = "hold-short";
 
             const position = interpolateRouteProfile(plane.routeProfile, plane.progress);
@@ -3116,8 +3257,12 @@ function setupMap() {
                 arrivalApproachSpeed: Math.max(plane.speed * 10.2, 0.044),
                 arrivalLandingSpeed: Math.max(plane.speed * 7.6, 0.028),
                 arrivalRolloutEnd: 0,
+                goAroundCutoffProgress: 0,
+                goAroundUsed: false,
+                goAroundEndProgress: 0,
                 arrivalOrigin: plane.arrivalOrigin ?? null,
                 arrivalRunwayName: plane.arrivalRunwayName ?? null,
+                arrivalRunwayDesignation: plane.arrivalRunwayDesignation ?? null,
                 approachGuideLine: null,
                 holdDelayMs: 350 + (index * 40),
                 holdStartedAt: null,
@@ -3155,7 +3300,9 @@ function setupMap() {
                 animatedPlane.runwayName = arrivalRoute.runwayName;
                 animatedPlane.runwayStart = arrivalRoute.runwayStart;
                 animatedPlane.arrivalRolloutEnd = arrivalRoute.arrivalRolloutEnd;
+                animatedPlane.goAroundCutoffProgress = arrivalRoute.goAroundCutoffProgress;
                 animatedPlane.arrivalOrigin = arrivalRoute.arrivalOrigin;
+                animatedPlane.arrivalRunwayDesignation = arrivalRoute.arrivalRunwayDesignation;
                 animatedPlane.progress = 0;
                 const initialArrivalPosition = interpolateRouteProfile(animatedPlane.routeProfile, 0);
                 animatedPlane.marker.setLatLng(initialArrivalPosition);
@@ -3348,8 +3495,12 @@ function setupMap() {
                 arrivalApproachSpeed: Math.max(arrivalPlane.speed * 10.2, 0.044),
                 arrivalLandingSpeed: Math.max(arrivalPlane.speed * 7.6, 0.028),
                 arrivalRolloutEnd: 0,
+                goAroundCutoffProgress: arrivalRoute.goAroundCutoffProgress,
+                goAroundUsed: false,
+                goAroundEndProgress: 0,
                 arrivalOrigin: null,
                 arrivalRunwayName: arrivalPlane.arrivalRunwayName,
+                arrivalRunwayDesignation: arrivalRoute.arrivalRunwayDesignation,
                 approachGuideLine: null,
                 holdDelayMs: 350 + (animatedPlanes.length * 40),
                 holdStartedAt: null,
@@ -3368,7 +3519,9 @@ function setupMap() {
             animatedPlane.runwayName = arrivalRoute.runwayName;
             animatedPlane.runwayStart = arrivalRoute.runwayStart;
             animatedPlane.arrivalRolloutEnd = arrivalRoute.arrivalRolloutEnd;
+            animatedPlane.goAroundCutoffProgress = arrivalRoute.goAroundCutoffProgress;
             animatedPlane.arrivalOrigin = arrivalRoute.arrivalOrigin;
+            animatedPlane.arrivalRunwayDesignation = arrivalRoute.arrivalRunwayDesignation;
             animatedPlane.marker.setLatLng(interpolateRouteProfile(animatedPlane.routeProfile, 0));
             animatedPlane.marker.setIcon(createPlaneMarkerIcon(animatedPlane.callsign, getPlaneHeading(animatedPlane), map.getZoom()));
 
