@@ -1875,13 +1875,12 @@ function getDepartureSpeed(plane) {
             ?? getRunwayDesignations(plane.arrivalRunwayName ?? plane.runwayName ?? "")[0]
             ?? null;
         const isRunway06RArrival = arrivalDesignation === "06R";
+        const approachSpeed = plane.arrivalApproachSpeed ?? plane.arrivalLandingSpeed ?? plane.runwaySpeed;
+        const approachCruiseSpeed = plane.taxiSpeed + ((approachSpeed - plane.taxiSpeed) * 0.22);
 
         if (plane.progress < runwayStart) {
-            const approachSpeed = plane.arrivalApproachSpeed ?? plane.arrivalLandingSpeed ?? plane.runwaySpeed;
-            const approachCruiseSpeed = plane.taxiSpeed + ((approachSpeed - plane.taxiSpeed) * 0.16);
-
             if (plane.goAroundUsed && plane.progress < goAroundEndProgress) {
-                const goAroundCruiseSpeed = plane.taxiSpeed + ((approachSpeed - plane.taxiSpeed) * 0.1);
+                const goAroundCruiseSpeed = plane.taxiSpeed + ((approachSpeed - plane.taxiSpeed) * 0.14);
                 return Math.min(goAroundCruiseSpeed, approachCruiseSpeed) * speedMultiplier;
             }
 
@@ -1892,7 +1891,7 @@ function getDepartureSpeed(plane) {
             const rolloutProgress = rolloutEnd > runwayStart
                 ? (plane.progress - runwayStart) / (rolloutEnd - runwayStart)
                 : 1;
-            const arrivalSpeed = plane.arrivalLandingSpeed ?? plane.runwaySpeed;
+            const arrivalSpeed = Math.min(plane.arrivalLandingSpeed ?? plane.runwaySpeed, approachCruiseSpeed * 0.97);
             const decelerationProgress = isRunway06RArrival
                 ? Math.pow(rolloutProgress, 1.18)
                 : Math.min(Math.pow(rolloutProgress / 0.56, 1.12), 1);
@@ -2101,7 +2100,8 @@ function resolvePlaneSpacing(plane, resolvedPositions, fallbackProgress) {
             progress: resolvedProgress,
             position: resolvedPosition,
             minimumSpacingSquared,
-            prediction
+            prediction,
+            blockingPlane: null
         };
     }
 
@@ -2121,7 +2121,8 @@ function resolvePlaneSpacing(plane, resolvedPositions, fallbackProgress) {
             progress: resolvedProgress,
             position: resolvedPosition,
             minimumSpacingSquared,
-            prediction
+            prediction,
+            blockingPlane: null
         };
     }
 
@@ -2159,7 +2160,8 @@ function resolvePlaneSpacing(plane, resolvedPositions, fallbackProgress) {
         progress: resolvedProgress,
         position: resolvedPosition,
         minimumSpacingSquared,
-        prediction
+        prediction,
+        blockingPlane
     };
 }
 
@@ -2563,9 +2565,16 @@ function setupMap() {
         let lastPlaneControlPanelMarkup = "";
         let planeSearchQuery = "";
 
+        function canPlaneReceiveDepartureClearance(plane) {
+            return plane.operationType !== "arrival"
+                && !plane.returningToGate
+                && Boolean(plane.runwayName || plane.hasAssignedRunway || plane.routeProfile?.totalLength);
+        }
+
         function createPlaneActionMarkup(plane) {
             const isArrival = plane.operationType === "arrival" && plane.returningToGate;
             const hasRunwayAssignment = plane.hasAssignedRunway && !plane.returningToGate && !isArrival;
+            const canChangeDepartureClearance = canPlaneReceiveDepartureClearance(plane);
             const canGoAround = isArrival && canPlaneGoAround(plane);
             const runwayButtons = isArrival
                 ? ""
@@ -2582,13 +2591,13 @@ function setupMap() {
             const clearanceControls = !isArrival
                 ? `
                     <div class="plane-clearance-row">
-                        <button type="button" class="plane-action-button clearance${hasRunwayAssignment && departureClearance === "hold-short" ? " active-clearance" : ""}" data-clearance="hold-short" ${hasRunwayAssignment ? "" : "disabled"}>
+                        <button type="button" class="plane-action-button clearance${canChangeDepartureClearance && departureClearance === "hold-short" ? " active-clearance" : ""}" data-clearance="hold-short" ${canChangeDepartureClearance ? "" : "disabled"}>
                             Hold short
                         </button>
-                        <button type="button" class="plane-action-button clearance${hasRunwayAssignment && departureClearance === "line-up" ? " active-clearance" : ""}" data-clearance="line-up" ${hasRunwayAssignment ? "" : "disabled"}>
+                        <button type="button" class="plane-action-button clearance${canChangeDepartureClearance && departureClearance === "line-up" ? " active-clearance" : ""}" data-clearance="line-up" ${canChangeDepartureClearance ? "" : "disabled"}>
                             Line up & wait
                         </button>
-                        <button type="button" class="plane-action-button clearance${hasRunwayAssignment && departureClearance === "immediate" ? " active-clearance" : ""}" data-clearance="immediate" ${hasRunwayAssignment ? "" : "disabled"}>
+                        <button type="button" class="plane-action-button clearance${canChangeDepartureClearance && departureClearance === "immediate" ? " active-clearance" : ""}" data-clearance="immediate" ${canChangeDepartureClearance ? "" : "disabled"}>
                             Immediate takeoff
                         </button>
                     </div>
@@ -2812,6 +2821,10 @@ function setupMap() {
             const selectedClearance = button.getAttribute("data-clearance");
 
             if (selectedClearance) {
+                if (!canPlaneReceiveDepartureClearance(plane)) {
+                    return;
+                }
+
                 setPlaneDepartureClearance(plane, selectedClearance);
                 return;
             }
@@ -2857,13 +2870,60 @@ function setupMap() {
             popupElement.addEventListener("click", plane.popupActionHandler);
         }
 
+        function clearPlanePopupCloseTimer(plane) {
+            if (plane.popupCloseTimeoutId == null) {
+                return;
+            }
+
+            window.clearTimeout(plane.popupCloseTimeoutId);
+            plane.popupCloseTimeoutId = null;
+        }
+
+        function schedulePlanePopupClose(plane) {
+            clearPlanePopupCloseTimer(plane);
+            plane.popupCloseTimeoutId = window.setTimeout(() => {
+                plane.popupCloseTimeoutId = null;
+
+                if (!plane.isMarkerHovered && !plane.isPopupHovered) {
+                    plane.marker.closePopup();
+                }
+            }, 160);
+        }
+
+        function bindPlanePopupHoverHandlers(plane, popupElement) {
+            if (!popupElement) {
+                return;
+            }
+
+            if (plane.popupHoverElement && plane.popupMouseEnterHandler && plane.popupMouseLeaveHandler) {
+                plane.popupHoverElement.removeEventListener("mouseenter", plane.popupMouseEnterHandler);
+                plane.popupHoverElement.removeEventListener("mouseleave", plane.popupMouseLeaveHandler);
+            }
+
+            plane.popupMouseEnterHandler = () => {
+                plane.isPopupHovered = true;
+                clearPlanePopupCloseTimer(plane);
+            };
+
+            plane.popupMouseLeaveHandler = () => {
+                plane.isPopupHovered = false;
+                schedulePlanePopupClose(plane);
+            };
+
+            plane.popupHoverElement = popupElement;
+            popupElement.addEventListener("mouseenter", plane.popupMouseEnterHandler);
+            popupElement.addEventListener("mouseleave", plane.popupMouseLeaveHandler);
+        }
+
         function updatePlanePopup(plane, keepOpen = false) {
             const wasOpen = plane.marker.isPopupOpen();
             plane.marker.setPopupContent(createPlaneControlPopupContent(plane));
 
             if (keepOpen || wasOpen) {
                 plane.marker.openPopup();
-                bindPlanePopupActions(plane, plane.marker.getPopup()?.getElement());
+                const popupElement = plane.marker.getPopup()?.getElement();
+                bindPlanePopupActions(plane, popupElement);
+                bindPlanePopupHoverHandlers(plane, popupElement);
             }
 
             if (plane.allPlanes) {
@@ -3117,20 +3177,48 @@ function setupMap() {
 
         function attachPlanePopupHandlers(plane) {
             plane.marker.bindPopup(createPlaneControlPopupContent(plane), {
-                autoClose: true,
+                autoClose: false,
                 autoPan: false,
                 closeButton: false,
+                closeOnClick: false,
+                interactive: true,
                 className: "plane-control-popup-shell",
                 offset: [0, -10]
             });
 
             plane.marker.on("mouseover", () => {
+                plane.isMarkerHovered = true;
+                clearPlanePopupCloseTimer(plane);
                 map.closePopup();
                 plane.marker.openPopup();
             });
 
+            plane.marker.on("mouseout", () => {
+                plane.isMarkerHovered = false;
+                schedulePlanePopupClose(plane);
+            });
+
             plane.marker.on("popupopen", (event) => {
-                bindPlanePopupActions(plane, event.popup.getElement());
+                const popupElement = event.popup.getElement();
+
+                if (popupElement) {
+                    L.DomEvent.disableClickPropagation(popupElement);
+                    L.DomEvent.disableScrollPropagation(popupElement);
+                }
+
+                bindPlanePopupActions(plane, popupElement);
+                bindPlanePopupHoverHandlers(plane, popupElement);
+            });
+
+            plane.marker.on("popupclose", () => {
+                plane.isPopupHovered = false;
+
+                if (plane.popupHoverElement && plane.popupMouseEnterHandler && plane.popupMouseLeaveHandler) {
+                    plane.popupHoverElement.removeEventListener("mouseenter", plane.popupMouseEnterHandler);
+                    plane.popupHoverElement.removeEventListener("mouseleave", plane.popupMouseLeaveHandler);
+                }
+
+                plane.popupHoverElement = null;
             });
         }
 
@@ -3743,6 +3831,28 @@ function setupMap() {
 
                     const spacingFallbackProgress = didWrapToRouteStart ? plane.progress : previousProgress;
                     const spacingResolution = resolvePlaneSpacing(plane, resolvedPositions, spacingFallbackProgress);
+                    const shouldGoAroundForRunwayConflict = plane.operationType === "arrival"
+                        && plane.returningToGate
+                        && plane.progress < plane.runwayStart
+                        && spacingResolution.blockingPlane?.runwayName === plane.runwayName
+                        && spacingResolution.blockingPlane?.isOnRunway
+                        && canPlaneGoAround(plane);
+
+                    if (shouldGoAroundForRunwayConflict) {
+                        triggerPlaneGoAround(plane);
+
+                        const goAroundPosition = interpolateRouteProfile(plane.routeProfile, plane.progress);
+                        resolvedPositions.push({
+                            position: goAroundPosition,
+                            progress: plane.progress,
+                            runwayName: plane.runwayName,
+                            minimumSpacingSquared: spacingResolution.minimumSpacingSquared,
+                            prediction: buildPlanePrediction(plane, plane.progress),
+                            isOnRunway: isPlaneOnRunway(plane)
+                        });
+                        return;
+                    }
+
                     const isSpacingBlocked = !didWrapToRouteStart
                         && spacingResolution.progress < (previousProgress - 1e-6);
 
@@ -3765,16 +3875,13 @@ function setupMap() {
                         progress: plane.progress,
                         runwayName: plane.runwayName,
                         minimumSpacingSquared: spacingResolution.minimumSpacingSquared,
-                        prediction: spacingResolution.prediction
+                        prediction: spacingResolution.prediction,
+                        isOnRunway: isPlaneOnRunway(plane)
                     });
                     const heading = getPlaneHeading(plane);
                     plane.marker.setLatLng(position);
                     plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, heading, map.getZoom()));
                     syncArrivalGuideLine(plane);
-
-                    if (plane.marker.isPopupOpen()) {
-                        updatePlanePopup(plane, true);
-                    }
                 });
 
                 renderPlaneControlPanel(animatedPlanes);
