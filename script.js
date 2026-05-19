@@ -209,6 +209,10 @@ const preferredArrivalRunwayExitProgress = 0.24;
 const extendedArrivalRunwayExitProgress06R = 0.8;
 const goAroundPatternStraightAheadMeters = 2400;
 const goAroundPatternOuterRadiusMeters = 4200;
+const goAroundPatternRadiusVarianceMeters = 1050;
+const goAroundPatternRejoinLeadMeters = 1400;
+const goAroundMaximumTurnDegrees = 30;
+const goAroundTurnTrimDistanceMeters = 950;
 const goAroundOrbitSamples = 48;
 
 function getDirectChildrenByName(element, name) {
@@ -1368,6 +1372,105 @@ function projectPointByHeading(point, heading, distanceMeters) {
         point[0] + ((Math.cos(headingRadians) * distanceMeters) / metersPerDegreeLat),
         point[1] + ((Math.sin(headingRadians) * distanceMeters) / Math.max(metersPerDegreeLng, 1e-6))
     ];
+}
+
+function interpolatePoint(start, end, ratio) {
+    return [
+        start[0] + ((end[0] - start[0]) * ratio),
+        start[1] + ((end[1] - start[1]) * ratio)
+    ];
+}
+
+function getPointDistanceMeters(start, end) {
+    const averageLatitude = ((start[0] + end[0]) / 2) * (Math.PI / 180);
+    const deltaLatMeters = (end[0] - start[0]) * 111320;
+    const deltaLngMeters = (end[1] - start[1]) * 111320 * Math.cos(averageLatitude);
+
+    return Math.hypot(deltaLatMeters, deltaLngMeters);
+}
+
+function getMaxRouteTurnAngle(points) {
+    let maxTurnAngle = 0;
+
+    for (let index = 1; index < points.length - 1; index += 1) {
+        const inboundHeading = getHeadingBetweenPoints(points[index - 1], points[index]);
+        const outboundHeading = getHeadingBetweenPoints(points[index], points[index + 1]);
+        maxTurnAngle = Math.max(maxTurnAngle, getHeadingDifference(inboundHeading, outboundHeading));
+    }
+
+    return maxTurnAngle;
+}
+
+function buildQuadraticCurvePoints(start, control, end, segmentCount) {
+    return Array.from({ length: segmentCount }, (_, index) => {
+        const progress = (index + 1) / segmentCount;
+        const inverseProgress = 1 - progress;
+
+        return [
+            ((inverseProgress ** 2) * start[0]) + (2 * inverseProgress * progress * control[0]) + ((progress ** 2) * end[0]),
+            ((inverseProgress ** 2) * start[1]) + (2 * inverseProgress * progress * control[1]) + ((progress ** 2) * end[1])
+        ];
+    });
+}
+
+function smoothRouteTurns(points, maxTurnDegrees, trimDistanceMeters = goAroundTurnTrimDistanceMeters, maxPasses = 4) {
+    let smoothedPoints = dedupeRoutePoints(points);
+
+    for (let pass = 0; pass < maxPasses; pass += 1) {
+        if (smoothedPoints.length < 3) {
+            break;
+        }
+
+        let changed = false;
+        const nextPoints = [smoothedPoints[0]];
+
+        for (let index = 1; index < smoothedPoints.length - 1; index += 1) {
+            const previousPoint = smoothedPoints[index - 1];
+            const currentPoint = smoothedPoints[index];
+            const followingPoint = smoothedPoints[index + 1];
+            const inboundHeading = getHeadingBetweenPoints(previousPoint, currentPoint);
+            const outboundHeading = getHeadingBetweenPoints(currentPoint, followingPoint);
+            const turnAngle = getHeadingDifference(inboundHeading, outboundHeading);
+
+            if (turnAngle <= maxTurnDegrees) {
+                nextPoints.push(currentPoint);
+                continue;
+            }
+
+            const incomingLengthMeters = getPointDistanceMeters(previousPoint, currentPoint);
+            const outgoingLengthMeters = getPointDistanceMeters(currentPoint, followingPoint);
+            const trimDistance = Math.min(
+                trimDistanceMeters,
+                incomingLengthMeters * 0.45,
+                outgoingLengthMeters * 0.45
+            );
+
+            if (trimDistance < 100) {
+                nextPoints.push(currentPoint);
+                continue;
+            }
+
+            const entryPoint = interpolatePoint(previousPoint, currentPoint, 1 - (trimDistance / incomingLengthMeters));
+            const exitPoint = interpolatePoint(currentPoint, followingPoint, trimDistance / outgoingLengthMeters);
+            const curveSegmentCount = Math.max(3, Math.ceil(turnAngle / Math.max(maxTurnDegrees / 2, 1)));
+
+            if (!arePointsEquivalent(nextPoints.at(-1), entryPoint)) {
+                nextPoints.push(entryPoint);
+            }
+
+            nextPoints.push(...buildQuadraticCurvePoints(entryPoint, currentPoint, exitPoint, curveSegmentCount));
+            changed = true;
+        }
+
+        nextPoints.push(smoothedPoints.at(-1));
+        smoothedPoints = dedupeRoutePoints(nextPoints);
+
+        if (!changed || getMaxRouteTurnAngle(smoothedPoints) <= maxTurnDegrees + 0.5) {
+            break;
+        }
+    }
+
+    return smoothedPoints;
 }
 
 function arePointsEquivalent(leftPoint, rightPoint, toleranceSquared = 1e-12) {
@@ -2947,7 +3050,29 @@ function setupMap() {
             return plane.progress < goAroundCutoffProgress;
         }
 
-        function buildGoAroundOrbitPoints(startBearing, endBearing, clockwise) {
+        function getGoAroundLoopRadius(progress) {
+            return goAroundPatternOuterRadiusMeters
+                + (Math.sin(progress * Math.PI) * goAroundPatternRadiusVarianceMeters)
+                + (Math.sin(progress * Math.PI * 2) * (goAroundPatternRadiusVarianceMeters * 0.32));
+        }
+
+        function buildGoAroundPatternCenter(entryPoint, rejoinLeadPoint, heading, patternSide) {
+            const midpoint = interpolatePoint(entryPoint, rejoinLeadPoint, 0.5);
+            const loopAxisHeading = getHeadingBetweenPoints(entryPoint, rejoinLeadPoint);
+            const lateralOffsetPoint = projectPointByHeading(
+                midpoint,
+                normalizeHeading(loopAxisHeading + (patternSide * 90)),
+                goAroundPatternOuterRadiusMeters * 0.38
+            );
+
+            return projectPointByHeading(
+                lateralOffsetPoint,
+                heading,
+                goAroundPatternOuterRadiusMeters * 0.12
+            );
+        }
+
+        function buildGoAroundOrbitPoints(centerPoint, startBearing, endBearing, clockwise) {
             const orbitSweep = clockwise
                 ? normalizeHeading(endBearing - startBearing) + 360
                 : -(normalizeHeading(startBearing - endBearing) + 360);
@@ -2955,25 +3080,36 @@ function setupMap() {
             return Array.from({ length: goAroundOrbitSamples }, (_, index) => {
                 const progress = (index + 1) / goAroundOrbitSamples;
                 const bearing = normalizeHeading(startBearing + (orbitSweep * progress));
-                return projectPointByHeading(airportCenter, bearing, goAroundPatternOuterRadiusMeters);
+                return projectPointByHeading(centerPoint, bearing, getGoAroundLoopRadius(progress));
             });
         }
 
-        function buildGoAroundPattern(startPoint, heading, runwayName, rejoinPoint) {
+        function buildGoAroundPattern(startPoint, heading, runwayName, rejoinRoute) {
             const patternSide = getArrivalCurveDirection(runwayName ?? "");
+            const rejoinPoint = rejoinRoute[0] ?? startPoint;
+            const rejoinHeading = rejoinRoute.length > 1
+                ? getHeadingBetweenPoints(rejoinRoute[0], rejoinRoute[1])
+                : normalizeHeading(heading + 180);
             const straightAheadPoint = projectPointByHeading(startPoint, heading, goAroundPatternStraightAheadMeters);
-            const orbitEntryBearing = getHeadingBetweenPoints(airportCenter, straightAheadPoint);
-            const orbitExitBearing = getHeadingBetweenPoints(airportCenter, rejoinPoint);
-            const orbitEntryPoint = projectPointByHeading(airportCenter, orbitEntryBearing, goAroundPatternOuterRadiusMeters);
-            const orbitPoints = buildGoAroundOrbitPoints(orbitEntryBearing, orbitExitBearing, patternSide > 0);
+            const rejoinLeadPoint = projectPointByHeading(
+                rejoinPoint,
+                normalizeHeading(rejoinHeading + 180),
+                goAroundPatternRejoinLeadMeters
+            );
+            const loopCenter = buildGoAroundPatternCenter(straightAheadPoint, rejoinLeadPoint, heading, patternSide);
+            const orbitEntryBearing = getHeadingBetweenPoints(loopCenter, straightAheadPoint);
+            const orbitExitBearing = getHeadingBetweenPoints(loopCenter, rejoinLeadPoint);
+            const orbitEntryPoint = projectPointByHeading(loopCenter, orbitEntryBearing, getGoAroundLoopRadius(0));
+            const orbitPoints = buildGoAroundOrbitPoints(loopCenter, orbitEntryBearing, orbitExitBearing, patternSide > 0);
 
-            return dedupeRoutePoints([
+            return smoothRouteTurns(dedupeRoutePoints([
                 startPoint,
                 straightAheadPoint,
                 orbitEntryPoint,
                 ...orbitPoints,
+                rejoinLeadPoint,
                 rejoinPoint
-            ]);
+            ]), goAroundMaximumTurnDegrees);
         }
 
         function triggerPlaneGoAround(plane) {
@@ -2994,7 +3130,7 @@ function setupMap() {
                 currentPoint,
                 getPlaneHeading(plane),
                 plane.arrivalRunwayName ?? plane.runwayName,
-                rejoinRoute[0]
+                rejoinRoute
             );
             const runwayStartPoint = interpolateRouteProfile(previousRouteProfile, plane.runwayStart ?? 1);
             const rolloutEndPoint = interpolateRouteProfile(previousRouteProfile, plane.arrivalRolloutEnd ?? 1);
