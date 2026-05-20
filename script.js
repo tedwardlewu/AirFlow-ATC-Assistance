@@ -210,10 +210,10 @@ const extendedArrivalRunwayExitProgress06R = 0.8;
 const goAroundPatternStraightAheadMeters = 2400;
 const goAroundPatternOuterRadiusMeters = 4200;
 const goAroundPatternRadiusVarianceMeters = 1050;
-const goAroundPatternRejoinLeadMeters = 1400;
-const goAroundMaximumTurnDegrees = 30;
-const goAroundTurnTrimDistanceMeters = 950;
-const goAroundOrbitSamples = 48;
+const goAroundPatternRejoinLeadMeters = 2100;
+const goAroundMaximumTurnDegrees = 18;
+const goAroundTurnTrimDistanceMeters = 1500;
+const goAroundOrbitSamples = 72;
 
 function getDirectChildrenByName(element, name) {
     return Array.from(element.children).filter((child) => child.localName === name);
@@ -1413,7 +1413,7 @@ function buildQuadraticCurvePoints(start, control, end, segmentCount) {
     });
 }
 
-function smoothRouteTurns(points, maxTurnDegrees, trimDistanceMeters = goAroundTurnTrimDistanceMeters, maxPasses = 4) {
+function smoothRouteTurns(points, maxTurnDegrees, trimDistanceMeters = goAroundTurnTrimDistanceMeters, maxPasses = 6) {
     let smoothedPoints = dedupeRoutePoints(points);
 
     for (let pass = 0; pass < maxPasses; pass += 1) {
@@ -1967,6 +1967,12 @@ function buildReturnToGateRoute(origin, parkingEntries, taxiwayLines, runwayEntr
     };
 }
 
+function shouldEnforceArrivalTaxiSpeed(plane) {
+    return plane.operationType === "arrival"
+        && plane.returningToGate
+        && plane.progress >= (plane.arrivalRolloutEnd ?? plane.runwayStart ?? 0);
+}
+
 function getDepartureSpeed(plane) {
     const speedMultiplier = plane.speedMultiplier ?? 1;
 
@@ -2005,7 +2011,7 @@ function getDepartureSpeed(plane) {
             return rolloutSpeed * speedMultiplier;
         }
 
-        return plane.taxiSpeed * speedMultiplier;
+        return plane.taxiSpeed;
     }
 
     if (plane.returningToGate) {
@@ -2676,6 +2682,7 @@ function setupMap() {
 
         function createPlaneActionMarkup(plane) {
             const isArrival = plane.operationType === "arrival" && plane.returningToGate;
+            const enforceArrivalTaxiSpeed = shouldEnforceArrivalTaxiSpeed(plane);
             const hasRunwayAssignment = plane.hasAssignedRunway && !plane.returningToGate && !isArrival;
             const canChangeDepartureClearance = canPlaneReceiveDepartureClearance(plane);
             const canGoAround = isArrival && canPlaneGoAround(plane);
@@ -2690,7 +2697,7 @@ function setupMap() {
                 `;
             }).join("");
             const departureClearance = getPlaneDepartureClearance(plane);
-            const speedPercent = Math.round((plane.speedMultiplier ?? 1) * 100);
+            const speedPercent = enforceArrivalTaxiSpeed ? 100 : Math.round((plane.speedMultiplier ?? 1) * 100);
             const clearanceControls = !isArrival
                 ? `
                     <div class="plane-clearance-row">
@@ -2708,10 +2715,10 @@ function setupMap() {
                 : "";
             const speedControls = `
                 <div class="plane-action-row">
-                    <button type="button" class="plane-action-button" data-speed-change="-1">
+                    <button type="button" class="plane-action-button" data-speed-change="-1" ${enforceArrivalTaxiSpeed ? "disabled" : ""}>
                         Slower
                     </button>
-                    <button type="button" class="plane-action-button" data-speed-change="1">
+                    <button type="button" class="plane-action-button" data-speed-change="1" ${enforceArrivalTaxiSpeed ? "disabled" : ""}>
                         Faster
                     </button>
                 </div>
@@ -2877,7 +2884,14 @@ function setupMap() {
                 ? planes.filter((plane) => plane.callsign.includes(normalizedQuery))
                 : planes;
             const inboundPlanes = visiblePlanes.filter((plane) => plane.operationType === "arrival" && plane.returningToGate);
-            const groundPlanes = visiblePlanes.filter((plane) => !(plane.operationType === "arrival" && plane.returningToGate));
+            const takeoffBoundPlanes = visiblePlanes.filter((plane) => {
+                return plane.operationType !== "arrival"
+                    && plane.hasAssignedRunway
+                    && !plane.returningToGate;
+            });
+            const groundPlanes = visiblePlanes.filter((plane) => {
+                return !inboundPlanes.includes(plane) && !takeoffBoundPlanes.includes(plane);
+            });
             const buildSectionMarkup = (title, subtitle, sectionPlanes) => {
                 return `
                     <section class="plane-control-section">
@@ -2897,7 +2911,8 @@ function setupMap() {
             const nextMarkup = visiblePlanes.length
                 ? [
                     buildSectionMarkup("Inbound Aircraft", "Landing rollout and taxi-in traffic.", inboundPlanes),
-                    buildSectionMarkup("Aircraft On Ground", "Departures, queued traffic, and turnaround aircraft.", groundPlanes)
+                    buildSectionMarkup("Departure Traffic", "Aircraft taxiing out, holding short, or lined up for departure.", takeoffBoundPlanes),
+                    buildSectionMarkup("Aircraft On Ground", "Parked, turnaround, and return-to-gate traffic.", groundPlanes)
                 ].join("")
                 : `<div class="plane-control-empty">No flights match “${planeSearchQuery.trim()}”.</div>`;
 
@@ -3091,22 +3106,34 @@ function setupMap() {
                 ? getHeadingBetweenPoints(rejoinRoute[0], rejoinRoute[1])
                 : normalizeHeading(heading + 180);
             const straightAheadPoint = projectPointByHeading(startPoint, heading, goAroundPatternStraightAheadMeters);
+            const turnOutPoint = projectPointByHeading(
+                straightAheadPoint,
+                normalizeHeading(heading + (patternSide * 24)),
+                goAroundPatternOuterRadiusMeters * 0.28
+            );
             const rejoinLeadPoint = projectPointByHeading(
                 rejoinPoint,
                 normalizeHeading(rejoinHeading + 180),
                 goAroundPatternRejoinLeadMeters
             );
-            const loopCenter = buildGoAroundPatternCenter(straightAheadPoint, rejoinLeadPoint, heading, patternSide);
-            const orbitEntryBearing = getHeadingBetweenPoints(loopCenter, straightAheadPoint);
-            const orbitExitBearing = getHeadingBetweenPoints(loopCenter, rejoinLeadPoint);
+            const rejoinBlendPoint = projectPointByHeading(
+                rejoinLeadPoint,
+                normalizeHeading(rejoinHeading + (patternSide * -22)),
+                goAroundPatternOuterRadiusMeters * 0.2
+            );
+            const loopCenter = buildGoAroundPatternCenter(turnOutPoint, rejoinBlendPoint, heading, patternSide);
+            const orbitEntryBearing = getHeadingBetweenPoints(loopCenter, turnOutPoint);
+            const orbitExitBearing = getHeadingBetweenPoints(loopCenter, rejoinBlendPoint);
             const orbitEntryPoint = projectPointByHeading(loopCenter, orbitEntryBearing, getGoAroundLoopRadius(0));
             const orbitPoints = buildGoAroundOrbitPoints(loopCenter, orbitEntryBearing, orbitExitBearing, patternSide > 0);
 
             return smoothRouteTurns(dedupeRoutePoints([
                 startPoint,
                 straightAheadPoint,
+                turnOutPoint,
                 orbitEntryPoint,
                 ...orbitPoints,
+                rejoinBlendPoint,
                 rejoinLeadPoint,
                 rejoinPoint
             ]), goAroundMaximumTurnDegrees);
@@ -3167,6 +3194,12 @@ function setupMap() {
         }
 
         function adjustPlaneSpeed(plane, delta) {
+            if (shouldEnforceArrivalTaxiSpeed(plane)) {
+                plane.speedMultiplier = 1;
+                updatePlanePopup(plane, true);
+                return;
+            }
+
             const nextMultiplier = Math.min(Math.max((plane.speedMultiplier ?? 1) + (delta * 0.2), 0.4), 2.2);
             plane.speedMultiplier = Number(nextMultiplier.toFixed(2));
             updatePlanePopup(plane, true);
@@ -3913,6 +3946,10 @@ function setupMap() {
                 [...activePlanes]
                     .sort((left, right) => right.progress - left.progress)
                     .forEach((plane) => {
+                    if (shouldEnforceArrivalTaxiSpeed(plane) && plane.speedMultiplier !== 1) {
+                        plane.speedMultiplier = 1;
+                    }
+
                     const previousProgress = plane.progress;
                     const runwayDepartureLeader = runwayDepartureLeaders.get(plane.runwayName);
                     let didWrapToRouteStart = false;
