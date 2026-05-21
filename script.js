@@ -198,7 +198,7 @@ const movingAssets = [
     }
 ];
 
-const startupOccupancyRatio = 0.8;
+const startupOccupancyRatio = 0.64;
 const startupInboundShare = 0.08;
 const startupOpenStandReserve = 4;
 const arrivalSpawnIntervalMs = 60000;
@@ -2034,6 +2034,112 @@ function getDepartureSpeed(plane) {
     return (plane.runwaySpeed + (plane.takeoffAcceleration * takeoffProgress)) * speedMultiplier;
 }
 
+const approachDisplayCeilingFeet = 3200;
+const departureDisplayCeilingFeet = 3400;
+const standardTaxiSpeedKnots = 30;
+const approachDisplayMinKnots = 180;
+const approachDisplayMaxKnots = 250;
+
+function getPlaneSpeedKnots(plane) {
+    if (!plane.hasAssignedRunway || !plane.routeProfile?.totalLength || !plane.taxiSpeed) {
+        return 0;
+    }
+
+    if (plane.operationType === "arrival" && plane.returningToGate) {
+        const runwayStart = plane.runwayStart ?? 0;
+        const rolloutEnd = plane.arrivalRolloutEnd ?? runwayStart;
+        const goAroundEndProgress = plane.goAroundEndProgress ?? 0;
+
+        if (plane.goAroundUsed && plane.progress < goAroundEndProgress) {
+            const goAroundProgress = goAroundEndProgress > 0
+                ? Math.min(Math.max(plane.progress / goAroundEndProgress, 0), 1)
+                : 1;
+            return Math.round(210 + ((approachDisplayMaxKnots - 210) * goAroundProgress));
+        }
+
+        if (plane.progress < runwayStart) {
+            const approachProgress = runwayStart > 0
+                ? Math.min(Math.max(plane.progress / runwayStart, 0), 1)
+                : 1;
+            const displayedApproachSpeed = approachDisplayMaxKnots
+                - ((approachDisplayMaxKnots - approachDisplayMinKnots) * (approachProgress ** 1.08));
+
+            return Math.round(displayedApproachSpeed);
+        }
+
+        if (plane.progress < rolloutEnd) {
+            const rolloutProgress = rolloutEnd > runwayStart
+                ? Math.min(Math.max((plane.progress - runwayStart) / (rolloutEnd - runwayStart), 0), 1)
+                : 1;
+            const displayedRolloutSpeed = approachDisplayMinKnots
+                - ((approachDisplayMinKnots - standardTaxiSpeedKnots) * (rolloutProgress ** 0.92));
+
+            return Math.round(displayedRolloutSpeed);
+        }
+
+        return standardTaxiSpeedKnots;
+    }
+
+    const internalSpeed = getDepartureSpeed(plane);
+    const calibratedSpeed = standardTaxiSpeedKnots * (internalSpeed / plane.taxiSpeed);
+
+    return Math.max(0, Math.round(calibratedSpeed));
+}
+
+function getPlaneAltitudeFeet(plane) {
+    if (!plane.hasAssignedRunway || !plane.routeProfile?.totalLength) {
+        return 0;
+    }
+
+    if (plane.operationType === "arrival" && plane.returningToGate) {
+        const runwayStart = plane.runwayStart ?? 0;
+        const goAroundEndProgress = plane.goAroundEndProgress ?? 0;
+
+        if (plane.goAroundUsed && plane.progress < goAroundEndProgress) {
+            const goAroundProgress = goAroundEndProgress > 0
+                ? Math.min(Math.max(plane.progress / goAroundEndProgress, 0), 1)
+                : 1;
+            const climbProfile = Math.sin(goAroundProgress * Math.PI * 0.5);
+            return Math.round(900 + (approachDisplayCeilingFeet * climbProfile));
+        }
+
+        if (plane.progress >= runwayStart) {
+            return 0;
+        }
+
+        const descentProgress = runwayStart > 0
+            ? Math.min(Math.max(plane.progress / runwayStart, 0), 1)
+            : 1;
+        const easedDescent = descentProgress ** 1.15;
+        return Math.max(0, Math.round(approachDisplayCeilingFeet * (1 - easedDescent)));
+    }
+
+    if (plane.returningToGate || plane.progress < (plane.runwayStart ?? 1)) {
+        return 0;
+    }
+
+    const runwayStart = plane.runwayStart ?? 1;
+    const climbProgress = Math.min(
+        Math.max((plane.progress - runwayStart) / Math.max(1 - runwayStart, 0.0001), 0),
+        1
+    );
+    const easedClimb = climbProgress ** 1.08;
+
+    return Math.max(0, Math.round(departureDisplayCeilingFeet * easedClimb));
+}
+
+function getPlaneTelemetry(plane) {
+    const speedKnots = getPlaneSpeedKnots(plane);
+    const altitudeFeet = getPlaneAltitudeFeet(plane);
+
+    return {
+        speedKnots,
+        altitudeFeet,
+        speedLabel: `${speedKnots} knts`,
+        altitudeLabel: `${altitudeFeet.toLocaleString("en-US")} ft`
+    };
+}
+
 function isPlaneOnRunway(plane) {
     if (plane.operationType === "arrival" && plane.returningToGate) {
         return plane.progress >= plane.runwayStart && plane.progress < (plane.arrivalRolloutEnd ?? plane.runwayStart);
@@ -2672,7 +2778,9 @@ function setupMap() {
         const planeSearchInput = document.getElementById("plane-search-input");
         const manualArrivalSpawnButton = document.getElementById("manual-arrival-spawn");
         let lastPlaneControlPanelMarkup = "";
+        let lastPlaneControlPanelRenderAt = 0;
         let planeSearchQuery = "";
+        const planeControlPanelRefreshMs = 450;
 
         function canPlaneReceiveDepartureClearance(plane) {
             return plane.operationType !== "arrival"
@@ -2796,6 +2904,7 @@ function setupMap() {
         function createPlaneControlPopupContent(plane) {
             const controls = createPlaneActionMarkup(plane);
             const airlineBadge = createAirlineBadgeMarkup(plane);
+            const telemetry = getPlaneTelemetry(plane);
             const runwaySelectorMarkup = controls.runwayButtons
                 ? `
                     <div class="plane-runway-selector">
@@ -2815,11 +2924,12 @@ function setupMap() {
                         </div>
                     </div>
                     <small>Gate ${plane.gate} · ${plane.parkingName}</small>
+                    <small>${telemetry.speedLabel} · Altitude ${telemetry.altitudeLabel}</small>
                     ${runwaySelectorMarkup}
                     ${controls.clearanceControls}
                     ${controls.goAroundAction}
                     ${controls.speedControls}
-                    <small>Speed ${controls.speedPercent}%</small>
+                    <small>Speed control ${controls.speedPercent}%</small>
                     ${controls.abortAction}
                     <small class="plane-control-hint">${controls.hint}</small>
                 </div>
@@ -2829,6 +2939,7 @@ function setupMap() {
         function createPlaneControlCardContent(plane) {
             const controls = createPlaneActionMarkup(plane);
             const airlineBadge = createAirlineBadgeMarkup(plane);
+            const telemetry = getPlaneTelemetry(plane);
             const runwaySelectorMarkup = controls.runwayButtons
                 ? `
                     <div class="plane-runway-selector">
@@ -2863,19 +2974,27 @@ function setupMap() {
                         </div>
                     </div>
                     <small>Gate ${plane.gate} · ${plane.parkingName}</small>
+                    <small>${telemetry.speedLabel} · Altitude ${telemetry.altitudeLabel}</small>
                     ${runwaySelectorMarkup}
                     ${controls.clearanceControls}
                     ${controls.goAroundAction}
                     ${controls.speedControls}
-                    <small>Speed ${controls.speedPercent}%</small>
+                    <small>Speed control ${controls.speedPercent}%</small>
                     ${controls.abortAction}
                     <small class="plane-control-hint">${controls.hint}</small>
                 </article>
             `;
         }
 
-        function renderPlaneControlPanel(planes) {
+        function renderPlaneControlPanel(planes, options = {}) {
             if (!planeControlList) {
+                return;
+            }
+
+            const forceRender = options.force ?? true;
+            const renderTimestamp = options.timestamp ?? performance.now();
+
+            if (!forceRender && (renderTimestamp - lastPlaneControlPanelRenderAt) < planeControlPanelRefreshMs) {
                 return;
             }
 
@@ -2920,6 +3039,7 @@ function setupMap() {
                 return;
             }
 
+            lastPlaneControlPanelRenderAt = renderTimestamp;
             lastPlaneControlPanelMarkup = nextMarkup;
             planeControlList.innerHTML = nextMarkup;
         }
@@ -4057,7 +4177,7 @@ function setupMap() {
                     syncArrivalGuideLine(plane);
                 });
 
-                renderPlaneControlPanel(animatedPlanes);
+                renderPlaneControlPanel(animatedPlanes, { force: false, timestamp });
 
                 window.requestAnimationFrame(tick);
             };
