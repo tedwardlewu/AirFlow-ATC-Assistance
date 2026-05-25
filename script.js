@@ -2140,12 +2140,30 @@ function getPlaneTelemetry(plane) {
     };
 }
 
-function isPlaneOnRunway(plane) {
-    if (plane.operationType === "arrival" && plane.returningToGate) {
-        return plane.progress >= plane.runwayStart && plane.progress < (plane.arrivalRolloutEnd ?? plane.runwayStart);
+function canPlaneInitiateGoAround(plane) {
+    if (
+        plane.operationType !== "arrival"
+        || !plane.returningToGate
+        || !plane.routeProfile?.totalLength
+        || plane.goAroundUsed
+    ) {
+        return false;
     }
 
-    return plane.progress >= plane.runwayStart && plane.progress < 0.995;
+    return plane.progress < (plane.runwayStart ?? 0);
+}
+
+function isPlaneOnRunwayAtProgress(plane, progress) {
+    if (plane.operationType === "arrival" && plane.returningToGate) {
+        return progress >= (plane.runwayStart ?? 0)
+            && progress < (plane.arrivalRolloutEnd ?? plane.runwayStart ?? 0);
+    }
+
+    return progress >= (plane.runwayStart ?? 1) && progress < 0.995;
+}
+
+function isPlaneOnRunway(plane) {
+    return isPlaneOnRunwayAtProgress(plane, plane.progress);
 }
 
 function convertMetersToDistanceSquared(meters) {
@@ -2231,6 +2249,7 @@ function getMinimumPlaneSpacingSquared(plane) {
 }
 
 const planePredictionLookaheadSeconds = [0, 1.6, 3.4, 5.2];
+const arrivalRunwayConflictProbeOffsetsSeconds = [-1.2, 0, 1.2];
 
 function getProjectedPlaneProgress(plane, progress, secondsAhead) {
     const simulatedPlane = {
@@ -2680,6 +2699,86 @@ function setupMap() {
                     scaleOptions?.minScale,
                     scaleOptions?.minWeight
                 )
+            });
+        });
+    }
+
+    function getSecondsUntilPlaneProgress(plane, targetProgress, maximumLookaheadSeconds = 45) {
+        if (!plane.routeProfile?.totalLength || targetProgress <= plane.progress) {
+            return 0;
+        }
+
+        let lowerBoundSeconds = 0;
+        let upperBoundSeconds = 1;
+
+        while (
+            upperBoundSeconds < maximumLookaheadSeconds
+            && getProjectedPlaneProgress(plane, plane.progress, upperBoundSeconds) < targetProgress
+        ) {
+            lowerBoundSeconds = upperBoundSeconds;
+            upperBoundSeconds *= 2;
+        }
+
+        const cappedUpperBoundSeconds = Math.min(upperBoundSeconds, maximumLookaheadSeconds);
+
+        if (getProjectedPlaneProgress(plane, plane.progress, cappedUpperBoundSeconds) < targetProgress) {
+            return null;
+        }
+
+        let lowSeconds = lowerBoundSeconds;
+        let highSeconds = cappedUpperBoundSeconds;
+
+        for (let iteration = 0; iteration < 14; iteration += 1) {
+            const midpointSeconds = (lowSeconds + highSeconds) * 0.5;
+            const projectedProgress = getProjectedPlaneProgress(plane, plane.progress, midpointSeconds);
+
+            if (projectedProgress >= targetProgress) {
+                highSeconds = midpointSeconds;
+            } else {
+                lowSeconds = midpointSeconds;
+            }
+        }
+
+        return highSeconds;
+    }
+
+    function getArrivalTouchdownPredictionSeconds(plane) {
+        const runwayStart = plane.runwayStart ?? 1;
+        return getSecondsUntilPlaneProgress(plane, runwayStart);
+    }
+
+    function isPlanePredictedToOccupyRunwayAtSeconds(plane, secondsAhead) {
+        if (!plane.routeProfile?.totalLength) {
+            return false;
+        }
+
+        const projectedProgress = getProjectedPlaneProgress(plane, plane.progress, secondsAhead);
+        return isPlaneOnRunwayAtProgress(plane, projectedProgress);
+    }
+
+    function shouldTriggerPredictedRunwayGoAround(plane, activePlanes) {
+        if (!canPlaneInitiateGoAround(plane)) {
+            return false;
+        }
+
+        const touchdownSeconds = getArrivalTouchdownPredictionSeconds(plane);
+
+        if (touchdownSeconds == null) {
+            return false;
+        }
+
+        return activePlanes.some((otherPlane) => {
+            if (
+                otherPlane === plane
+                || otherPlane.runwayName !== plane.runwayName
+                || !otherPlane.routeProfile?.totalLength
+            ) {
+                return false;
+            }
+
+            return arrivalRunwayConflictProbeOffsetsSeconds.some((offsetSeconds) => {
+                const probeSeconds = Math.max(touchdownSeconds + offsetSeconds, 0);
+                return isPlanePredictedToOccupyRunwayAtSeconds(otherPlane, probeSeconds);
             });
         });
     }
@@ -3170,19 +3269,7 @@ function setupMap() {
         }
 
         function canPlaneGoAround(plane) {
-            if (
-                plane.operationType !== "arrival"
-                || !plane.returningToGate
-                || !plane.routeProfile?.totalLength
-                || plane.goAroundUsed
-            ) {
-                return false;
-            }
-
-            const runwayStart = plane.runwayStart ?? 0;
-            const goAroundCutoffProgress = Math.min(plane.goAroundCutoffProgress ?? runwayStart, runwayStart);
-
-            return plane.progress < goAroundCutoffProgress;
+            return canPlaneInitiateGoAround(plane);
         }
 
         function getGoAroundLoopRadius(progress) {
@@ -4119,6 +4206,42 @@ function setupMap() {
                     }
 
                     if (didWrapToRouteStart) {
+                        return;
+                    }
+
+                    const shouldGoAroundForOccupiedRunwayNow = plane.operationType === "arrival"
+                        && plane.returningToGate
+                        && plane.progress < (plane.runwayStart ?? 0)
+                        && occupiedRunways.has(plane.runwayName)
+                        && canPlaneGoAround(plane);
+
+                    if (shouldGoAroundForOccupiedRunwayNow) {
+                        triggerPlaneGoAround(plane);
+
+                        const goAroundPosition = interpolateRouteProfile(plane.routeProfile, plane.progress);
+                        resolvedPositions.push({
+                            position: goAroundPosition,
+                            progress: plane.progress,
+                            runwayName: plane.runwayName,
+                            minimumSpacingSquared: getMinimumPlaneSpacingSquared(plane),
+                            prediction: buildPlanePrediction(plane, plane.progress),
+                            isOnRunway: isPlaneOnRunway(plane)
+                        });
+                        return;
+                    }
+
+                    if (shouldTriggerPredictedRunwayGoAround(plane, activePlanes)) {
+                        triggerPlaneGoAround(plane);
+
+                        const goAroundPosition = interpolateRouteProfile(plane.routeProfile, plane.progress);
+                        resolvedPositions.push({
+                            position: goAroundPosition,
+                            progress: plane.progress,
+                            runwayName: plane.runwayName,
+                            minimumSpacingSquared: getMinimumPlaneSpacingSquared(plane),
+                            prediction: buildPlanePrediction(plane, plane.progress),
+                            isOnRunway: isPlaneOnRunway(plane)
+                        });
                         return;
                     }
 
