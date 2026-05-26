@@ -66,6 +66,10 @@ const airportImageryBounds = [
     [45.4550, -73.7170]
 ];
 
+const baseLandingSuccessRate = 0.95;
+const weatherUpdateIntervalMs = 24000;
+const weatherState = initWeather();
+
 const gateMarkers = [
     { name: "Gate 52", coords: [45.4697, -73.7415], detail: "Domestic pier" },
     { name: "Gate 54", coords: [45.4692, -73.7431], detail: "Air Canada narrowbody stand" },
@@ -478,6 +482,213 @@ function renderClock() {
     const clock = document.getElementById("clock");
     const stamp = new Date().toISOString().slice(11, 19) + "Z";
     clock.textContent = stamp;
+}
+
+function clampNumber(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+}
+
+function formatPercent(value) {
+    return `${Math.round(value * 100)}%`;
+}
+
+function initWeather() {
+    return {
+        category: "VFR",
+        windDirection: 260,
+        windSpeedKnots: 9,
+        gustKnots: 12,
+        visibilityKm: 12,
+        precipitation: "Dry",
+        precipitationRate: 0,
+        temperatureC: 17,
+        humidityPercent: 58,
+        landingSuccessRate: baseLandingSuccessRate,
+        goAroundRate: 1 - baseLandingSuccessRate,
+        updatedAt: Date.now()
+    };
+}
+
+function pickWeather(roll) {
+    if (roll < 0.52) {
+        return {
+            category: "VFR",
+            windSpeedKnots: 7 + Math.round(Math.random() * 7),
+            gustExtraKnots: 1 + Math.round(Math.random() * 4),
+            visibilityKm: 10 + Math.round(Math.random() * 8),
+            precipitation: "Dry",
+            precipitationRate: 0
+        };
+    }
+
+    if (roll < 0.77) {
+        return {
+            category: "VFR",
+            windSpeedKnots: 12 + Math.round(Math.random() * 8),
+            gustExtraKnots: 4 + Math.round(Math.random() * 7),
+            visibilityKm: 8 + Math.round(Math.random() * 6),
+            precipitation: "Light rain",
+            precipitationRate: 0.4
+        };
+    }
+
+    if (roll < 0.92) {
+        return {
+            category: "MVFR",
+            windSpeedKnots: 18 + Math.round(Math.random() * 11),
+            gustExtraKnots: 8 + Math.round(Math.random() * 9),
+            visibilityKm: 5 + Math.round(Math.random() * 4),
+            precipitation: "Moderate rain",
+            precipitationRate: 0.7
+        };
+    }
+
+    return {
+        category: "IFR",
+        windSpeedKnots: 26 + Math.round(Math.random() * 15),
+        gustExtraKnots: 10 + Math.round(Math.random() * 12),
+        visibilityKm: 2 + Math.round(Math.random() * 3),
+        precipitation: Math.random() < 0.25 ? "Heavy rain" : "Showers",
+        precipitationRate: 1
+    };
+}
+
+function syncWeather() {
+    const preset = pickWeather(Math.random());
+    const windDirectionBase = 220 + Math.round(Math.random() * 95);
+    const windDirectionJitter = Math.round((Math.random() - 0.5) * 12);
+    const windDirection = ((windDirectionBase + windDirectionJitter) + 360) % 360;
+    const windSpeedKnots = preset.windSpeedKnots;
+    const gustKnots = windSpeedKnots + preset.gustExtraKnots;
+    const temperatureC = Math.round(14 + (Math.random() * 12) - (preset.precipitationRate * 4));
+    const humidityPercent = Math.round(clampNumber(52 + (preset.precipitationRate * 30) + ((gustKnots - windSpeedKnots) * 1.8), 45, 96));
+    const crosswindFactor = clampNumber((windSpeedKnots - 12) / 30, 0, 1);
+    const gustFactor = clampNumber((gustKnots - windSpeedKnots) / 18, 0, 1);
+    const rainFactor = preset.precipitationRate;
+    const visibilityFactor = clampNumber((10 - preset.visibilityKm) / 10, 0, 1);
+    const penalty = (crosswindFactor * 0.16)
+        + (gustFactor * 0.09)
+        + (rainFactor * 0.1)
+        + (visibilityFactor * 0.06);
+    const landingSuccessRate = clampNumber(baseLandingSuccessRate - penalty, 0.65, 0.98);
+
+    weatherState.category = preset.category;
+    weatherState.windDirection = windDirection;
+    weatherState.windSpeedKnots = windSpeedKnots;
+    weatherState.gustKnots = gustKnots;
+    weatherState.visibilityKm = preset.visibilityKm;
+    weatherState.precipitation = preset.precipitation;
+    weatherState.precipitationRate = preset.precipitationRate;
+    weatherState.temperatureC = temperatureC;
+    weatherState.humidityPercent = humidityPercent;
+    weatherState.landingSuccessRate = landingSuccessRate;
+    weatherState.goAroundRate = 1 - landingSuccessRate;
+    weatherState.updatedAt = Date.now();
+}
+
+function renderWeather() {
+    const weatherCallout = document.querySelector(".map-callout.weather");
+    const wxSum = document.getElementById("wx-sum");
+    const wxWind = document.getElementById("wx-wind");
+    const wxTemp = document.getElementById("wx-temp");
+    const wxHumid = document.getElementById("wx-humid");
+
+    if (weatherCallout) {
+        const title = weatherCallout.querySelector("strong");
+        const detail = weatherCallout.querySelector("small");
+
+        if (title) {
+            title.textContent = `${weatherState.category} · Landing ${formatPercent(weatherState.landingSuccessRate)}`;
+        }
+
+        if (detail) {
+            detail.textContent = `Wind ${String(weatherState.windDirection).padStart(3, "0")}@${weatherState.windSpeedKnots}kt G${weatherState.gustKnots} · ${weatherState.precipitation} · Vis ${weatherState.visibilityKm}km`;
+        }
+    }
+
+    if (wxSum) {
+        wxSum.textContent = `Weather ${weatherState.category} ${weatherState.precipitation}`;
+    }
+
+    if (wxWind) {
+        wxWind.textContent = `Wind ${String(weatherState.windDirection).padStart(3, "0")}@${weatherState.windSpeedKnots}kt G${weatherState.gustKnots}`;
+    }
+
+    if (wxTemp) {
+        wxTemp.textContent = `Temp ${weatherState.temperatureC} C`;
+    }
+
+    if (wxHumid) {
+        wxHumid.textContent = `Humidity ${weatherState.humidityPercent}%`;
+    }
+}
+
+function rateLanding(plane) {
+    const speedDelta = Math.max((plane.arrivalApproachSpeed ?? plane.runwaySpeed ?? 0) - (plane.arrivalLandingSpeed ?? plane.taxiSpeed ?? 0), 0);
+    const approachPenalty = clampNumber(speedDelta / 0.22, 0, 1) * 0.03;
+    const stabilityPenalty = (1 - (plane.landingStabilityFactor ?? 0.92)) * 0.12;
+
+    return clampNumber(weatherState.landingSuccessRate - approachPenalty - stabilityPenalty, 0.58, 0.99);
+}
+
+function setLanding(plane) {
+    plane.landingStabilityFactor = 0.86 + (Math.random() * 0.14);
+    plane.landingSuccessRate = rateLanding(plane);
+    plane.goAroundReason = null;
+    plane.autoGoAroundTriggered = false;
+}
+
+function failReason() {
+    const reasons = [
+        {
+            active: weatherState.windSpeedKnots >= 25 || (weatherState.gustKnots - weatherState.windSpeedKnots) >= 10,
+            reason: "Unstable in gusty winds, going around"
+        },
+        {
+            active: weatherState.precipitationRate >= 0.7,
+            reason: "Rainy touchdown risk, going around"
+        },
+        {
+            active: weatherState.visibilityKm <= 4,
+            reason: "Approach too unstable in low visibility, going around"
+        }
+    ];
+    const weatherReason = reasons.find((entry) => entry.active);
+
+    if (weatherReason) {
+        return weatherReason.reason;
+    }
+
+    return Math.random() < 0.5
+        ? "Approach came in high, going around"
+        : "Bounced on touchdown, power set for go-around";
+}
+
+function autoAround(plane, previousProgress, nextProgress) {
+    if (!canPlaneInitiateGoAround(plane) || plane.autoGoAroundTriggered) {
+        return false;
+    }
+
+    const runwayStart = plane.runwayStart ?? 0;
+    const triggerProgress = Math.max(runwayStart - 0.012, plane.goAroundCutoffProgress ?? 0);
+
+    if (previousProgress < triggerProgress && nextProgress < triggerProgress) {
+        return false;
+    }
+
+    plane.landingSuccessRate = rateLanding(plane);
+
+    const didFailLanding = Math.random() > (plane.landingSuccessRate ?? weatherState.landingSuccessRate);
+
+    if (!didFailLanding) {
+        plane.autoGoAroundTriggered = true;
+        plane.goAroundReason = null;
+        return false;
+    }
+
+    plane.autoGoAroundTriggered = true;
+    plane.goAroundReason = failReason();
+    return true;
 }
 
 function renderFlights() {
@@ -2893,6 +3104,13 @@ function setupMap() {
             const hasRunwayAssignment = plane.hasAssignedRunway && !plane.returningToGate && !isArrival;
             const canChangeDepartureClearance = canPlaneReceiveDepartureClearance(plane);
             const canGoAround = isArrival && canPlaneGoAround(plane);
+            const effectiveLandingSuccessRate = isArrival
+                ? rateLanding(plane)
+                : plane.landingSuccessRate ?? weatherState.landingSuccessRate;
+            plane.landingSuccessRate = effectiveLandingSuccessRate;
+            const landingSuccessLabel = isArrival
+                ? formatPercent(effectiveLandingSuccessRate)
+                : null;
             const runwayButtons = isArrival
                 ? ""
                 : runwayChoices.map((runwayName) => {
@@ -2952,12 +3170,15 @@ function setupMap() {
                 speedControls,
                 goAroundAction,
                 abortAction,
+                landingStatus: isArrival
+                    ? `<small>Landing success ${landingSuccessLabel} · Go-around ${formatPercent(1 - effectiveLandingSuccessRate)}</small>`
+                    : "",
                 hint: hasRunwayAssignment
                     ? isArrival
                         ? canGoAround
                             ? `Inbound via ${plane.arrivalRunwayName ?? "arrival runway"}. Go-around available before the black centerline segment.`
                             : plane.goAroundUsed
-                                ? `Inbound via ${plane.arrivalRunwayName ?? "arrival runway"}. Go-around already used for this approach.`
+                                ? plane.goAroundReason ?? `Inbound via ${plane.arrivalRunwayName ?? "arrival runway"}. Go-around already used for this approach.`
                             : `Inbound via ${plane.arrivalRunwayName ?? "arrival runway"}. Past the black centerline segment, landing continues.`
                         : {
                         "hold-short": "Hold short before the purple hold line.",
@@ -3024,6 +3245,7 @@ function setupMap() {
                     </div>
                     <small>Gate ${plane.gate} · ${plane.parkingName}</small>
                     <small>${telemetry.speedLabel} · Altitude ${telemetry.altitudeLabel}</small>
+                    ${controls.landingStatus}
                     ${runwaySelectorMarkup}
                     ${controls.clearanceControls}
                     ${controls.goAroundAction}
@@ -3074,6 +3296,7 @@ function setupMap() {
                     </div>
                     <small>Gate ${plane.gate} · ${plane.parkingName}</small>
                     <small>${telemetry.speedLabel} · Altitude ${telemetry.altitudeLabel}</small>
+                    ${controls.landingStatus}
                     ${runwaySelectorMarkup}
                     ${controls.clearanceControls}
                     ${controls.goAroundAction}
@@ -3448,6 +3671,9 @@ function setupMap() {
             plane.goAroundEndProgress = 0;
             plane.arrivalRunwayName = null;
             plane.arrivalRunwayDesignation = null;
+            plane.goAroundReason = null;
+            plane.autoGoAroundTriggered = false;
+            plane.landingSuccessRate = baseLandingSuccessRate;
 
             plane.marker.setLatLng({ lat: plane.standbyCoords[0], lng: plane.standbyCoords[1] });
             plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, getPlaneHeading(plane), map.getZoom()));
@@ -3471,6 +3697,8 @@ function setupMap() {
             plane.goAroundCutoffProgress = 0;
             plane.goAroundUsed = false;
             plane.goAroundEndProgress = 0;
+            plane.goAroundReason = null;
+            plane.autoGoAroundTriggered = false;
             plane.departureClearance = "hold-short";
 
             const position = interpolateRouteProfile(plane.routeProfile, plane.progress);
@@ -3735,7 +3963,11 @@ function setupMap() {
                 hasAssignedRunway: isArrival,
                 returningToGate: isArrival,
                 departureClearance: "hold-short",
-                speedMultiplier: 1
+                speedMultiplier: 1,
+                landingStabilityFactor: 0.92,
+                landingSuccessRate: baseLandingSuccessRate,
+                goAroundReason: null,
+                autoGoAroundTriggered: false
             };
 
             if (isArrival) {
@@ -3767,6 +3999,7 @@ function setupMap() {
                 animatedPlane.goAroundCutoffProgress = arrivalRoute.goAroundCutoffProgress;
                 animatedPlane.arrivalOrigin = arrivalRoute.arrivalOrigin;
                 animatedPlane.arrivalRunwayDesignation = arrivalRoute.arrivalRunwayDesignation;
+                setLanding(animatedPlane);
                 animatedPlane.progress = 0;
                 const initialArrivalPosition = interpolateRouteProfile(animatedPlane.routeProfile, 0);
                 animatedPlane.marker.setLatLng(initialArrivalPosition);
@@ -3973,7 +4206,11 @@ function setupMap() {
                 hasAssignedRunway: true,
                 returningToGate: true,
                 departureClearance: "hold-short",
-                speedMultiplier: 1
+                speedMultiplier: 1,
+                landingStabilityFactor: 0.92,
+                landingSuccessRate: baseLandingSuccessRate,
+                goAroundReason: null,
+                autoGoAroundTriggered: false
             };
 
             animatedPlane.route = arrivalRoute.route;
@@ -3986,6 +4223,7 @@ function setupMap() {
             animatedPlane.goAroundCutoffProgress = arrivalRoute.goAroundCutoffProgress;
             animatedPlane.arrivalOrigin = arrivalRoute.arrivalOrigin;
             animatedPlane.arrivalRunwayDesignation = arrivalRoute.arrivalRunwayDesignation;
+            setLanding(animatedPlane);
             animatedPlane.marker.setLatLng(interpolateRouteProfile(animatedPlane.routeProfile, 0));
             animatedPlane.marker.setIcon(createPlaneMarkerIcon(animatedPlane.callsign, getPlaneHeading(animatedPlane), map.getZoom()));
 
@@ -4209,6 +4447,21 @@ function setupMap() {
                         return;
                     }
 
+                    if (autoAround(plane, previousProgress, plane.progress)) {
+                        triggerPlaneGoAround(plane);
+
+                        const goAroundPosition = interpolateRouteProfile(plane.routeProfile, plane.progress);
+                        resolvedPositions.push({
+                            position: goAroundPosition,
+                            progress: plane.progress,
+                            runwayName: plane.runwayName,
+                            minimumSpacingSquared: getMinimumPlaneSpacingSquared(plane),
+                            prediction: buildPlanePrediction(plane, plane.progress),
+                            isOnRunway: isPlaneOnRunway(plane)
+                        });
+                        return;
+                    }
+
                     const shouldGoAroundForOccupiedRunwayNow = plane.operationType === "arrival"
                         && plane.returningToGate
                         && plane.progress < (plane.runwayStart ?? 0)
@@ -4374,6 +4627,12 @@ renderVehicles();
 renderAdvisories();
 renderRunways();
 refreshSummary();
+syncWeather();
+renderWeather();
 setupMap();
 
 window.setInterval(renderClock, 1000);
+window.setInterval(() => {
+    syncWeather();
+    renderWeather();
+}, weatherUpdateIntervalMs);

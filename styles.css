@@ -138,6 +138,36 @@ body::after {
     justify-content: flex-end;
 }
 
+.topbar-wx {
+    margin: 2px 0 0;
+    width: 100%;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    color: var(--muted-dark);
+    font-size: 0.82rem;
+    line-height: 1.35;
+}
+
+.topbar-wx span {
+    white-space: nowrap;
+}
+
+.topbar-wx span::after {
+    content: "|";
+    margin-left: 10px;
+    color: rgba(220, 230, 239, 0.28);
+}
+
+.topbar-wx span:last-child::after {
+    content: "";
+    margin: 0;
+}
+
+.topbar-wx strong {
+    color: var(--text);
+}
+
 .chip {
     display: inline-flex;
     align-items: center;
@@ -1267,6 +1297,10 @@ body::after {
         justify-content: flex-start;
     }
 
+    .topbar-wx {
+        gap: 8px;
+    }
+
     .dashboard-grid {
         grid-template-columns: 1fr;
     }
@@ -1340,5 +1374,18 @@ body::after {
 
     .kml-summary {
         bottom: 18px;
+    }
+}
+
+@media (max-width: 560px) {
+    .topbar-wx {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 4px;
+    }
+
+    .topbar-wx span::after {
+        content: "";
+        margin: 0;
     }
 }
