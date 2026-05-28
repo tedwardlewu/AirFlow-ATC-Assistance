@@ -79,6 +79,76 @@ const gateMarkers = [
     { name: "South Pad", coords: [45.4623, -73.7319], detail: "De-ice and remote stand area" }
 ];
 
+const gateAliases = new Map([
+    ["Cargo", "Cargo North"]
+]);
+
+const gateNumberByLabel = new Map(
+    [...new Set([
+        ...flightFeed.map((flight) => normalizeGateLabel(flight.gate)),
+        ...gateFeed.map((gate) => normalizeGateLabel(gate.gate)),
+        ...gateMarkers.map((gateMarker) => normalizeGateLabel(gateMarker.name))
+    ])]
+        .filter(Boolean)
+        .sort(compareGateLabels)
+        .map((label, index) => [label, String(index + 1)])
+);
+
+    let nextGateNumber = gateNumberByLabel.size + 1;
+
+function normalizeGateLabel(label) {
+    const cleanedLabel = String(label ?? "").trim().replace(/^Gate\s+/i, "");
+    return gateAliases.get(cleanedLabel) ?? cleanedLabel;
+}
+
+function compareGateLabels(leftLabel, rightLabel) {
+    const leftIsNumeric = /^\d+$/.test(leftLabel);
+    const rightIsNumeric = /^\d+$/.test(rightLabel);
+
+    if (leftIsNumeric && rightIsNumeric) {
+        return Number(leftLabel) - Number(rightLabel);
+    }
+
+    if (leftIsNumeric) {
+        return -1;
+    }
+
+    if (rightIsNumeric) {
+        return 1;
+    }
+
+    return leftLabel.localeCompare(rightLabel, undefined, { numeric: true, sensitivity: "base" });
+}
+
+function getGateNumber(label, fallbackNumber = null) {
+    const normalizedLabel = normalizeGateLabel(label);
+
+    if (!normalizedLabel) {
+        return fallbackNumber === null ? String(nextGateNumber++) : String(fallbackNumber);
+    }
+
+    if (gateNumberByLabel.has(normalizedLabel)) {
+        return gateNumberByLabel.get(normalizedLabel);
+    }
+
+    const allocatedGateNumber = String(nextGateNumber++);
+    gateNumberByLabel.set(normalizedLabel, allocatedGateNumber);
+    return allocatedGateNumber;
+}
+
+function formatGateZone(zone) {
+    const normalizedZone = String(zone ?? "").trim();
+    const gateMatch = normalizedZone.match(/^Gate\s+(.+)$/i);
+
+    if (gateMatch) {
+        return `Gate ${getGateNumber(gateMatch[1])}`;
+    }
+
+    return gateNumberByLabel.has(normalizeGateLabel(normalizedZone))
+        ? `Gate ${getGateNumber(normalizedZone)}`
+        : normalizedZone;
+}
+
 const surfaceRoutes = [
     {
         name: "Terminal Lead",
@@ -706,7 +776,7 @@ function renderFlights() {
             </div>
             <div class="table-row-block table-row-block-end">
                 <span class="table-head">Gate</span>
-                <strong>${flight.gate}</strong>
+                <strong>${getGateNumber(flight.gate)}</strong>
                 <small class="mono">${flight.eta}</small>
             </div>
         </article>
@@ -717,7 +787,7 @@ function renderGates() {
     const gateGrid = document.getElementById("gate-grid");
     gateGrid.innerHTML = gateFeed.map((gate) => `
         <article class="gate-card">
-            <span class="status-label">Gate ${gate.gate}</span>
+            <span class="status-label">Gate ${getGateNumber(gate.gate)}</span>
             <strong>${gate.carrier}</strong>
             <small class="gate-aircraft">${gate.aircraft}</small>
             <div class="gate-card-footer">
@@ -739,7 +809,7 @@ function renderVehicles() {
             </div>
             <div class="vehicle-meta">
                 <span class="status-label">Current Zone</span>
-                <strong>${vehicle.zone}</strong>
+                <strong>${formatGateZone(vehicle.zone)}</strong>
                 <small class="mono">${vehicle.eta}</small>
             </div>
         </article>
@@ -981,7 +1051,7 @@ function createStartupTraffic(parkingEntries, runwayEntries, occupancyRatio = st
     const departurePlanes = shuffledParkingEntries.slice(0, departurePlaneCount).map((parkingEntry, index) => {
         const standPoint = interpolatePath(getLinePoints(parkingEntry), 0.5);
         const nearestGate = getNearestGateMarker(standPoint);
-        const gateLabel = nearestGate?.name?.replace(/^Gate\s+/i, "") ?? `Stand ${index + 1}`;
+        const gateLabel = getGateNumber(nearestGate?.name, index + 1);
 
         return {
             callsign: `FLT${String(index + 1).padStart(3, "0")}`,
@@ -998,7 +1068,7 @@ function createStartupTraffic(parkingEntries, runwayEntries, occupancyRatio = st
         .map((parkingEntry, index) => {
             const standPoint = interpolatePath(getLinePoints(parkingEntry), 0.5);
             const nearestGate = getNearestGateMarker(standPoint);
-            const gateLabel = nearestGate?.name?.replace(/^Gate\s+/i, "") ?? `Stand ${departurePlaneCount + index + 1}`;
+            const gateLabel = getGateNumber(nearestGate?.name, departurePlaneCount + index + 1);
             const runwayEntry = runwayEntries[index % runwayEntries.length];
             const arrivalProgress = index % 2 === 0 ? 0.08 : 0.92;
             const arrivalPoint = interpolatePath(runwayEntry.linePoints, arrivalProgress);
@@ -3475,7 +3545,7 @@ function setupMap() {
             popupElement.addEventListener("mouseleave", plane.popupMouseLeaveHandler);
         }
 
-        function updatePlanePopup(plane, keepOpen = false) {
+        function refreshPlanePopupContent(plane, keepOpen = false) {
             const wasOpen = plane.marker.isPopupOpen();
             plane.marker.setPopupContent(createPlaneControlPopupContent(plane));
 
@@ -3485,6 +3555,10 @@ function setupMap() {
                 bindPlanePopupActions(plane, popupElement);
                 bindPlanePopupHoverHandlers(plane, popupElement);
             }
+        }
+
+        function updatePlanePopup(plane, keepOpen = false) {
+            refreshPlanePopupContent(plane, keepOpen);
 
             if (plane.allPlanes) {
                 renderPlaneControlPanel(plane.allPlanes);
@@ -4095,7 +4169,7 @@ function setupMap() {
 
                     const standPoint = interpolatePath(getLinePoints(parkingEntry), 0.5);
                     const nearestGate = getNearestGateMarker(standPoint);
-                    const gateLabel = nearestGate?.name?.replace(/^Gate\s+/i, "") ?? "Stand";
+                    const gateLabel = getGateNumber(nearestGate?.name, gateNumberByLabel.size + 1);
                     const [arrivalTemplate] = AssignAircraftModels([
                         {
                             callsign: "ARRIVAL",
@@ -4551,6 +4625,7 @@ function setupMap() {
                     plane.marker.setLatLng(position);
                     plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, heading, map.getZoom()));
                     syncArrivalGuideLine(plane);
+                    refreshPlanePopupContent(plane);
                 });
 
                 renderPlaneControlPanel(animatedPlanes, { force: false, timestamp });
