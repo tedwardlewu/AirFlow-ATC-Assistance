@@ -1349,22 +1349,51 @@ function buildRunwayDepartureRoute(runwayMatch) {
     };
 }
 
-function buildTaxiRouteToRunway(origin, taxiwayLines, runwayEntries, surfaceRouteGraph, runwayPreference = 0, preferredRunwayName = null) {
+function buildTaxiRouteToRunway(origin, taxiwayLines, runwayEntries, surfaceRouteGraph, runwayPreference = 0, preferredRunwayName = null, taxiwayRouteGraph = surfaceRouteGraph) {
     const routeOptions = [];
     const candidateRunwayEntries = preferredRunwayName
         ? runwayEntries.filter((entry) => entry.name === preferredRunwayName)
         : runwayEntries;
-    const runwayMatches = findLineMatches(origin, candidateRunwayEntries);
+    const runwayTargets = candidateRunwayEntries.map((entry) => {
+        const threshold = getDepartureRunwayThreshold(entry);
+        const runwayMatch = threshold ? getBestLineMatch(threshold.point, entry) : null;
+        const runwayEntryCandidate = threshold ? getDepartureRunwayEntryCandidate(entry, threshold.point, taxiwayLines) : null;
 
-    if (!runwayMatches.length) {
+        if (!threshold || !runwayMatch) {
+            return null;
+        }
+
+        return {
+            threshold,
+            runwayMatch,
+            runwayEntryCandidate
+        };
+    }).filter(Boolean);
+
+    if (!runwayTargets.length) {
         return null;
     }
 
     findLineMatches(origin, taxiwayLines)
         .slice(0, 8)
         .forEach((taxiMatch) => {
-            runwayMatches.forEach((runwayMatch) => {
-                const taxiRoute = buildGraphRouteBetweenMatches(surfaceRouteGraph, taxiMatch, runwayMatch);
+            runwayTargets.forEach(({ runwayMatch, runwayEntryCandidate }) => {
+                const runwaySurfaceCandidate = runwayEntryCandidate;
+                const taxiwayOnlyRoute = runwaySurfaceCandidate
+                    ? buildGraphRouteBetweenMatches(taxiwayRouteGraph, taxiMatch, runwaySurfaceCandidate.taxiwayMatch)
+                    : null;
+                if (runwaySurfaceCandidate && !taxiwayOnlyRoute?.length) {
+                    return;
+                }
+                const runwayEntryBridge = runwaySurfaceCandidate && taxiwayOnlyRoute?.length
+                    ? dedupeRoutePoints([
+                        ...buildBridgeRoute(runwaySurfaceCandidate.taxiwayMatch.projectedPoint, runwaySurfaceCandidate.runwayEntryPoint),
+                        ...buildBridgeRoute(runwaySurfaceCandidate.runwayEntryPoint, runwayMatch.projectedPoint)
+                    ])
+                    : [];
+                const taxiRoute = taxiwayOnlyRoute?.length
+                    ? dedupeRoutePoints([...taxiwayOnlyRoute, ...runwayEntryBridge])
+                    : buildGraphRouteBetweenMatches(surfaceRouteGraph, taxiMatch, runwayMatch);
                 const runwayDeparture = buildRunwayDepartureRoute(runwayMatch);
 
                 if (!taxiRoute?.length || !runwayDeparture) {
@@ -1464,8 +1493,8 @@ function getRunwayStartProgress(routeProfile, runwayMatch, fallbackRunwayStart) 
     return Math.min(Math.max(earliestRunwayProgress, 0), 0.98);
 }
 
-function buildDirectDepartureRoute(origin, taxiwayLines, runwayEntries, holdEntries, surfaceRouteGraph, runwayPreference = 0, preferredRunwayName = null) {
-    const taxiSelection = buildTaxiRouteToRunway(origin, taxiwayLines, runwayEntries, surfaceRouteGraph, runwayPreference, preferredRunwayName);
+function buildDirectDepartureRoute(origin, taxiwayLines, runwayEntries, holdEntries, surfaceRouteGraph, taxiwayRouteGraph, runwayPreference = 0, preferredRunwayName = null) {
+    const taxiSelection = buildTaxiRouteToRunway(origin, taxiwayLines, runwayEntries, surfaceRouteGraph, runwayPreference, preferredRunwayName, taxiwayRouteGraph);
 
     if (!taxiSelection) {
         return null;
@@ -1565,7 +1594,7 @@ function buildParkingStandFromEntry(parkingEntry, taxiwayLines) {
     };
 }
 
-function buildDepartureRoute(origin, parkingEntries, taxiwayLines, runwayEntries, holdEntries, surfaceRouteGraph, runwayPreference = 0, reservedParkingIds = new Set(), options = {}) {
+function buildDepartureRoute(origin, parkingEntries, taxiwayLines, runwayEntries, holdEntries, surfaceRouteGraph, taxiwayRouteGraph, runwayPreference = 0, reservedParkingIds = new Set(), options = {}) {
     const preferredParkingId = options.preferredParkingId ?? null;
     const preferredRunwayName = options.preferredRunwayName ?? null;
     const parkingStand = resolveParkingStand(origin, parkingEntries, taxiwayLines, reservedParkingIds, preferredParkingId);
@@ -1581,7 +1610,8 @@ function buildDepartureRoute(origin, parkingEntries, taxiwayLines, runwayEntries
         runwayEntries,
         surfaceRouteGraph,
         runwayPreference,
-        preferredRunwayName
+        preferredRunwayName,
+        taxiwayRouteGraph
     );
 
     if (!taxiSelection) {
@@ -1795,6 +1825,95 @@ function getArrivalRunwayThreshold(runwayEntry) {
         point: endPoint,
         heading: endHeading
     };
+}
+
+function getDepartureRunwayThreshold(runwayEntry) {
+    const arrivalThreshold = getArrivalRunwayThreshold(runwayEntry);
+    const linePoints = getLinePoints(runwayEntry);
+    const designations = getRunwayDesignations(runwayEntry?.name ?? "");
+
+    if (!arrivalThreshold || !linePoints || linePoints.length < 2) {
+        return null;
+    }
+
+    const startPoint = linePoints[0];
+    const endPoint = linePoints.at(-1);
+    const departureUsesStartPoint = arePointsEquivalent(arrivalThreshold.point, endPoint);
+    const departurePoint = departureUsesStartPoint ? startPoint : endPoint;
+    const departureHeading = departureUsesStartPoint
+        ? getHeadingBetweenPoints(startPoint, endPoint)
+        : getHeadingBetweenPoints(endPoint, startPoint);
+    const departureDesignation = departureUsesStartPoint
+        ? (designations[0] ?? runwayEntry?.name ?? "Runway")
+        : (designations[1] ?? designations[0] ?? runwayEntry?.name ?? "Runway");
+
+    return {
+        designation: departureDesignation,
+        point: departurePoint,
+        heading: departureHeading
+    };
+}
+
+function getDepartureRunwayEntryCandidate(runwayEntry, thresholdPoint, taxiwayLines) {
+    if (!taxiwayLines?.length) {
+        return null;
+    }
+
+    const orderedRunwayPoints = getOrderedRunwayPoints(runwayEntry, thresholdPoint);
+
+    if (orderedRunwayPoints.length < 2) {
+        return null;
+    }
+
+    const runwayProfile = createRouteProfile(orderedRunwayPoints);
+    const taxiwayCandidates = taxiwayLines.flatMap((taxiwayLine) => {
+        return taxiwayLine.map((taxiwayPoint) => {
+            const runwayPointMatch = getRouteProgressForPoint(runwayProfile, taxiwayPoint);
+
+            if (runwayPointMatch.distanceSquared > 1.2e-6) {
+                return null;
+            }
+
+            const runwayEntryPoint = interpolateRouteProfile(runwayProfile, runwayPointMatch.progress);
+            const taxiwayMatch = getBestLineMatch(taxiwayPoint, taxiwayLine);
+
+            if (!taxiwayMatch) {
+                return null;
+            }
+
+            return {
+                progress: runwayPointMatch.progress,
+                runwayEntryPoint: [runwayEntryPoint.lat, runwayEntryPoint.lng],
+                taxiwayMatch,
+                taxiwayLineLength: measurePolylineLength(taxiwayLine)
+            };
+        }).filter(Boolean);
+    }).filter(Boolean)
+        .sort((left, right) => left.progress - right.progress);
+
+    const clusteredCandidates = taxiwayCandidates.reduce((clusters, candidate) => {
+        const currentCluster = clusters.at(-1);
+
+        if (!currentCluster || Math.abs(candidate.progress - currentCluster.at(-1).progress) > 0.015) {
+            clusters.push([candidate]);
+            return clusters;
+        }
+
+        currentCluster.push(candidate);
+        return clusters;
+    }, []);
+
+    return clusteredCandidates
+        .map((cluster) => {
+            return cluster.reduce((bestCandidate, candidate) => {
+                if (!bestCandidate || candidate.taxiwayLineLength > bestCandidate.taxiwayLineLength) {
+                    return candidate;
+                }
+
+                return bestCandidate;
+            }, null);
+        })
+        .filter(Boolean)[0] ?? null;
 }
 
 function getPreferredArrivalExitProgress(runwayEntry) {
@@ -3149,6 +3268,7 @@ function setupMap() {
     });
 
     if (taxiwayLineSets.length) {
+        const taxiwayRouteGraph = buildPolylineGraph(taxiwayLineSets);
         const surfaceRouteGraph = buildPolylineGraph([
             ...taxiwayLineSets,
             ...runwayLineSets.map((entry) => entry.linePoints)
@@ -3481,9 +3601,30 @@ function setupMap() {
                 return;
             }
 
+            const popupInteractionElement = popupElement;
+
+            if (plane.popupActionElement && plane.popupActionPressHandler) {
+                plane.popupActionElement.removeEventListener("mousedown", plane.popupActionPressHandler);
+                plane.popupActionElement.removeEventListener("pointerdown", plane.popupActionPressHandler);
+            }
+
             if (plane.popupActionElement && plane.popupActionHandler) {
                 plane.popupActionElement.removeEventListener("click", plane.popupActionHandler);
             }
+
+            plane.popupActionPressHandler = (event) => {
+                const button = event.target instanceof Element
+                    ? event.target.closest("button")
+                    : null;
+
+                if (!button) {
+                    return;
+                }
+
+                event.preventDefault();
+                event.stopPropagation();
+                clearPlanePopupCloseTimer(plane);
+            };
 
             plane.popupActionHandler = (event) => {
                 const button = event.target instanceof Element
@@ -3493,11 +3634,17 @@ function setupMap() {
                 if (!button) {
                     return;
                 }
+
+                event.preventDefault();
+                event.stopPropagation();
+                clearPlanePopupCloseTimer(plane);
                 handlePlaneControlAction(plane, button);
             };
 
-            plane.popupActionElement = popupElement;
-            popupElement.addEventListener("click", plane.popupActionHandler);
+            plane.popupActionElement = popupInteractionElement;
+            popupInteractionElement.addEventListener("pointerdown", plane.popupActionPressHandler);
+            popupInteractionElement.addEventListener("mousedown", plane.popupActionPressHandler);
+            popupInteractionElement.addEventListener("click", plane.popupActionHandler);
         }
 
         function clearPlanePopupCloseTimer(plane) {
@@ -3525,6 +3672,8 @@ function setupMap() {
                 return;
             }
 
+            const popupHoverElement = popupElement;
+
             if (plane.popupHoverElement && plane.popupMouseEnterHandler && plane.popupMouseLeaveHandler) {
                 plane.popupHoverElement.removeEventListener("mouseenter", plane.popupMouseEnterHandler);
                 plane.popupHoverElement.removeEventListener("mouseleave", plane.popupMouseLeaveHandler);
@@ -3540,9 +3689,9 @@ function setupMap() {
                 schedulePlanePopupClose(plane);
             };
 
-            plane.popupHoverElement = popupElement;
-            popupElement.addEventListener("mouseenter", plane.popupMouseEnterHandler);
-            popupElement.addEventListener("mouseleave", plane.popupMouseLeaveHandler);
+            plane.popupHoverElement = popupHoverElement;
+            popupHoverElement.addEventListener("mouseenter", plane.popupMouseEnterHandler);
+            popupHoverElement.addEventListener("mouseleave", plane.popupMouseLeaveHandler);
         }
 
         function refreshPlanePopupContent(plane, keepOpen = false) {
@@ -3828,6 +3977,7 @@ function setupMap() {
                     runwayLineSets,
                     holdLineSets,
                     surfaceRouteGraph,
+                    taxiwayRouteGraph,
                     0,
                     new Set(),
                     {
@@ -3841,6 +3991,7 @@ function setupMap() {
                     runwayLineSets,
                     holdLineSets,
                     surfaceRouteGraph,
+                    taxiwayRouteGraph,
                     0,
                     runwayName
                 );
@@ -3890,6 +4041,19 @@ function setupMap() {
 
             plane.marker.on("popupclose", () => {
                 plane.isPopupHovered = false;
+
+                if (plane.popupActionElement && plane.popupActionPressHandler) {
+                    plane.popupActionElement.removeEventListener("pointerdown", plane.popupActionPressHandler);
+                    plane.popupActionElement.removeEventListener("mousedown", plane.popupActionPressHandler);
+                }
+
+                if (plane.popupActionElement && plane.popupActionHandler) {
+                    plane.popupActionElement.removeEventListener("click", plane.popupActionHandler);
+                }
+
+                plane.popupActionElement = null;
+                plane.popupActionPressHandler = null;
+                plane.popupActionHandler = null;
 
                 if (plane.popupHoverElement && plane.popupMouseEnterHandler && plane.popupMouseLeaveHandler) {
                     plane.popupHoverElement.removeEventListener("mouseenter", plane.popupMouseEnterHandler);
@@ -4625,7 +4789,9 @@ function setupMap() {
                     plane.marker.setLatLng(position);
                     plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, heading, map.getZoom()));
                     syncArrivalGuideLine(plane);
-                    refreshPlanePopupContent(plane);
+                    if (!plane.marker.isPopupOpen()) {
+                        refreshPlanePopupContent(plane);
+                    }
                 });
 
                 renderPlaneControlPanel(animatedPlanes, { force: false, timestamp });

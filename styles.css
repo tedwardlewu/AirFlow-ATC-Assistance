@@ -743,14 +743,22 @@ body::after {
     background: rgba(6, 10, 14, 0.98);
     border: 1px solid rgba(142, 162, 178, 0.16);
     box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3);
+    pointer-events: auto;
 }
 
 .plane-control-popup-shell .leaflet-popup-tip {
     background: rgba(12, 17, 23, 0.98);
+    pointer-events: auto;
 }
 
 .plane-control-popup-shell .leaflet-popup-content {
     margin: 8px 9px;
+    pointer-events: auto;
+}
+
+.plane-control-popup-shell,
+.plane-control-popup {
+    pointer-events: auto;
 }
 
 .plane-runway-selector {
