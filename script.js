@@ -1904,6 +1904,10 @@ function buildArrivalApproachPoint(touchdownPoint, runwayHeading, approachRatio,
     );
 }
 
+function smoothArrivalApproach(points) {
+    return smoothRouteTurns(points, 8, 900, 4);
+}
+
 function buildCurvedArrivalApproach(touchdownPoint, runwayHeading, runwayName) {
     const curveDirection = getArrivalCurveDirection(runwayName);
     const isRunway06LPair = (runwayName ?? "").includes("24R / 06L");
@@ -1914,17 +1918,18 @@ function buildCurvedArrivalApproach(touchdownPoint, runwayHeading, runwayName) {
         const baseTurnPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.58, 300, curveDirection);
         const centerlineJoinPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.34, 0, curveDirection);
         const shortFinalPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.18, 0, curveDirection);
+        const approachPoints = smoothArrivalApproach([
+            arrivalOrigin,
+            outerLegPoint,
+            baseTurnPoint,
+            centerlineJoinPoint,
+            shortFinalPoint,
+            touchdownPoint
+        ]);
 
         return {
             arrivalOrigin,
-            approachPoints: [
-                arrivalOrigin,
-                outerLegPoint,
-                baseTurnPoint,
-                centerlineJoinPoint,
-                shortFinalPoint,
-                touchdownPoint
-            ]
+            approachPoints
         };
     }
 
@@ -1933,17 +1938,18 @@ function buildCurvedArrivalApproach(touchdownPoint, runwayHeading, runwayName) {
     const baseTurnPoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.52, 240, curveDirection);
     const outerCurvePoint = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.76, 520, curveDirection);
     const arrivalOrigin = buildArrivalApproachPoint(touchdownPoint, runwayHeading, 0.96, 520, curveDirection);
+    const approachPoints = smoothArrivalApproach([
+        arrivalOrigin,
+        outerCurvePoint,
+        baseTurnPoint,
+        centerlineJoinPoint,
+        shortFinalPoint,
+        touchdownPoint
+    ]);
 
     return {
         arrivalOrigin,
-        approachPoints: [
-            arrivalOrigin,
-            outerCurvePoint,
-            baseTurnPoint,
-            centerlineJoinPoint,
-            shortFinalPoint,
-            touchdownPoint
-        ]
+        approachPoints
     };
 }
 
