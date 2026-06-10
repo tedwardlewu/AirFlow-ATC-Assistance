@@ -74,6 +74,13 @@ export const AirlineAircraftAssignments = {
         "Boeing 777-300ER",
         "Boeing 787-8",
         "Boeing 787-9"
+    ],
+    WJA: [
+        "Boeing 737 MAX 8",
+        "Boeing 737-800",
+        "Boeing 737-700",
+        "Boeing 787-9",
+        "De Havilland Dash 8-400"
     ]
 };
 
@@ -89,6 +96,13 @@ export const AirlineAircraftPhotoFiles = {
         "Boeing 777-300ER": "AC 777-300ER.png",
         "Boeing 787-8": "AC 787-8.jpg",
         "Boeing 787-9": "AC 787-9.jpg"
+    },
+    WJA: {
+        "Boeing 737 MAX 8": "WJ 737 MAX 8.avif",
+        "Boeing 737-800": "WJ 737 800.jpg",
+        "Boeing 737-700": "WJ 737 700.webp",
+        "Boeing 787-9": "WJ 787.avif",
+        "De Havilland Dash 8-400": "WJ DHC.jpg"
     }
 };
 

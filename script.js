@@ -3352,8 +3352,15 @@ function setupMap() {
         }
 
         function getAircraftPhoto(plane) {
-            const photoFile = AirlineAircraftPhotoFiles[plane.airlineCode]?.[plane.aircraftModel] ?? null;
-            const photoUrl = photoFile ? airlineLogoUrlByFile[photoFile] : null;
+            const photoSource = AirlineAircraftPhotoFiles[plane.airlineCode]?.[plane.aircraftModel] ?? null;
+
+            if (!photoSource) {
+                return null;
+            }
+
+            const photoUrl = /^https?:\/\//i.test(photoSource)
+                ? photoSource
+                : (airlineLogoUrlByFile[photoSource] ?? null);
 
             if (!photoUrl) {
                 return null;
