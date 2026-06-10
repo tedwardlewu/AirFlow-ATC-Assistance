@@ -298,6 +298,70 @@ export function createPlaneArrivalSpawner(dependencies) {
         return `${airlineCode}${Date.now().toString().slice(-4)}`;
     }
 
+    function selectArrivalSpawn(runwayCandidates, availableParkingEntries) {
+        for (const runwayEntry of runwayCandidates) {
+            for (const parkingEntry of availableParkingEntries) {
+                const standPoint = interpolatePath(getLinePoints(parkingEntry), 0.5);
+                const nearestGate = getNearestGateMarker(standPoint);
+                const gateLabel = getGateNumber(nearestGate?.name, gateNumberByLabel.size + 1);
+                const [arrivalTemplate] = AssignAircraftModels([
+                    {
+                        callsign: "ARRIVAL",
+                        gate: gateLabel,
+                        gateCoords: nearestGate?.coords ?? standPoint,
+                        preferredParkingId: parkingEntry.id,
+                        operationType: "arrival",
+                        arrivalRunwayName: runwayEntry.name,
+                        speed: 0.0042 + (Math.random() * 0.001)
+                    }
+                ]);
+
+                if (!arrivalTemplate) {
+                    continue;
+                }
+
+                const arrivalPlane = {
+                    ...arrivalTemplate,
+                    callsign: createUniqueAirlineCallsign(arrivalTemplate.airlineCode ?? "FLT")
+                };
+                const gateCoords = arrivalPlane.gateCoords ?? airportCenter;
+                const preferredParkingEntry = parkingEntryById.get(arrivalPlane.preferredParkingId);
+                const parkingStand = buildParkingStandFromEntry(preferredParkingEntry, taxiwayLineSets)
+                    ?? resolveParkingStand(gateCoords, parkingLineSets, taxiwayLineSets, reservedParkingIds, arrivalPlane.preferredParkingId);
+
+                if (!parkingStand) {
+                    continue;
+                }
+
+                const arrivalRoute = buildArrivalRoute(
+                    parkingLineSets,
+                    taxiwayLineSets,
+                    runwayLineSets,
+                    holdLineSets,
+                    surfaceRouteGraph,
+                    {
+                        preferredParkingId: arrivalPlane.preferredParkingId,
+                        preferredRunwayName: arrivalPlane.arrivalRunwayName,
+                        gateOrigin: gateCoords
+                    }
+                );
+
+                if (!arrivalRoute) {
+                    continue;
+                }
+
+                return {
+                    arrivalPlane,
+                    gateCoords,
+                    parkingStand,
+                    arrivalRoute
+                };
+            }
+        }
+
+        return null;
+    }
+
     function spawnArrivalPlane() {
         const occupiedParkingIds = new Set(
             animatedPlanes
@@ -334,76 +398,7 @@ export function createPlaneArrivalSpawner(dependencies) {
         }
 
         nextArrivalRunwayIndex = (runwayLineSets.indexOf(candidateRunway) + 1) % runwayLineSets.length;
-
-        let spawnSelection = null;
-
-        runwayCandidates.forEach((runwayEntry) => {
-            if (spawnSelection) {
-                return;
-            }
-
-            availableParkingEntries.forEach((parkingEntry) => {
-                if (spawnSelection) {
-                    return;
-                }
-
-                const standPoint = interpolatePath(getLinePoints(parkingEntry), 0.5);
-                const nearestGate = getNearestGateMarker(standPoint);
-                const gateLabel = getGateNumber(nearestGate?.name, gateNumberByLabel.size + 1);
-                const [arrivalTemplate] = AssignAircraftModels([
-                    {
-                        callsign: "ARRIVAL",
-                        gate: gateLabel,
-                        gateCoords: nearestGate?.coords ?? standPoint,
-                        preferredParkingId: parkingEntry.id,
-                        operationType: "arrival",
-                        arrivalRunwayName: runwayEntry.name,
-                        speed: 0.0042 + (Math.random() * 0.001)
-                    }
-                ]);
-
-                if (!arrivalTemplate) {
-                    return;
-                }
-
-                const arrivalPlane = {
-                    ...arrivalTemplate,
-                    callsign: createUniqueAirlineCallsign(arrivalTemplate.airlineCode ?? "FLT")
-                };
-                const gateCoords = arrivalPlane.gateCoords ?? airportCenter;
-                const preferredParkingEntry = parkingEntryById.get(arrivalPlane.preferredParkingId);
-                const parkingStand = buildParkingStandFromEntry(preferredParkingEntry, taxiwayLineSets)
-                    ?? resolveParkingStand(gateCoords, parkingLineSets, taxiwayLineSets, reservedParkingIds, arrivalPlane.preferredParkingId);
-
-                if (!parkingStand) {
-                    return;
-                }
-
-                const arrivalRoute = buildArrivalRoute(
-                    parkingLineSets,
-                    taxiwayLineSets,
-                    runwayLineSets,
-                    holdLineSets,
-                    surfaceRouteGraph,
-                    {
-                        preferredParkingId: arrivalPlane.preferredParkingId,
-                        preferredRunwayName: arrivalPlane.arrivalRunwayName,
-                        gateOrigin: gateCoords
-                    }
-                );
-
-                if (!arrivalRoute) {
-                    return;
-                }
-
-                spawnSelection = {
-                    arrivalPlane,
-                    gateCoords,
-                    parkingStand,
-                    arrivalRoute
-                };
-            });
-        });
+        const spawnSelection = selectArrivalSpawn(runwayCandidates, availableParkingEntries);
 
         if (!spawnSelection) {
             return;
