@@ -3,11 +3,11 @@ import "leaflet/dist/leaflet.css";
 import montrealYulKml from "./Media/Montreal YUL.kml?raw";
 import planeLogo from "./Media/Plane Logo.png";
 import { MajorAirlines } from "./AirlineCatalog.js";
-import { AssignAircraftModels } from "./AircraftCatalog.js";
+import { AirlineAircraftPhotoFiles, AssignAircraftModels } from "./AircraftCatalog.js";
 import { createPlaneArrivalOperations, createPlaneArrivalSpawner } from "./arrivals.js";
 import { createPlaneDepartureOperations } from "./departures.js";
 
-const airlineLogoModules = import.meta.glob("./Media/*.{png,jpg,jpeg,webp,svg}", {
+const airlineLogoModules = import.meta.glob("./Media/*.{png,jpg,jpeg,webp,svg,avif}", {
     eager: true,
     import: "default"
 });
@@ -3351,6 +3351,34 @@ function setupMap() {
             `;
         }
 
+        function getAircraftPhoto(plane) {
+            const photoFile = AirlineAircraftPhotoFiles[plane.airlineCode]?.[plane.aircraftModel] ?? null;
+            const photoUrl = photoFile ? airlineLogoUrlByFile[photoFile] : null;
+
+            if (!photoUrl) {
+                return null;
+            }
+
+            return {
+                photoUrl,
+                altText: `${plane.airlineName} ${plane.aircraftModel}`
+            };
+        }
+
+        function createAircraftPhotoMarkup(plane) {
+            const aircraftPhoto = getAircraftPhoto(plane);
+
+            if (!aircraftPhoto) {
+                return "";
+            }
+
+            return `
+                <div class="plane-aircraft-photo-frame">
+                    <img class="plane-aircraft-photo" src="${aircraftPhoto.photoUrl}" alt="${aircraftPhoto.altText}" loading="lazy">
+                </div>
+            `;
+        }
+
         function createPlaneControlPopupContent(plane) {
             const controls = createPlaneActionMarkup(plane);
             const airlineBadge = createAirlineBadgeMarkup(plane);
@@ -3390,6 +3418,7 @@ function setupMap() {
         function createPlaneControlCardContent(plane) {
             const controls = createPlaneActionMarkup(plane);
             const airlineBadge = createAirlineBadgeMarkup(plane);
+            const aircraftPhotoMarkup = createAircraftPhotoMarkup(plane);
             const telemetry = getPlaneTelemetry(plane);
             const runwaySelectorMarkup = controls.runwayButtons
                 ? `
@@ -3433,6 +3462,7 @@ function setupMap() {
                     ${controls.speedControls}
                     <small>Speed control ${controls.speedPercent}%</small>
                     ${controls.abortAction}
+                    ${aircraftPhotoMarkup}
                     <small class="plane-control-hint">${controls.hint}</small>
                 </article>
             `;

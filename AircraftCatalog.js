@@ -11,6 +11,7 @@ export const CommercialJetModels = [
     "Airbus A320neo",
     "Airbus A321-200",
     "Airbus A321neo",
+    "Airbus A321-XLR",
     "Airbus A300-600",
     "Airbus A310-300",
     "Airbus A330-200",
@@ -45,6 +46,7 @@ export const CommercialJetModels = [
     "Boeing 767-300ER",
     "Boeing 767-400ER",
     "Boeing 777-200",
+    "Boeing 777-200LR",
     "Boeing 777-200ER",
     "Boeing 777-300",
     "Boeing 777-300ER",
@@ -52,8 +54,43 @@ export const CommercialJetModels = [
     "Boeing 777-9",
     "Boeing 787-8",
     "Boeing 787-9",
-    "Boeing 787-10"
+    "Boeing 787-10",
+    "De Havilland Dash 8-400",
+    "Embraer E175",
+    "Mitsubishi CRJ900"
 ];
+
+export const AirlineAircraftAssignments = {
+    // Add airline fleets here as you provide them.
+    // Once at least one airline is configured, only configured airlines will spawn.
+    ACA: [
+        "Airbus A220-300",
+        "Airbus A320-200",
+        "Airbus A321-200",
+        "Airbus A321-XLR",
+        "Airbus A330-300",
+        "Boeing 737 MAX 8",
+        "Boeing 777-200LR",
+        "Boeing 777-300ER",
+        "Boeing 787-8",
+        "Boeing 787-9"
+    ]
+};
+
+export const AirlineAircraftPhotoFiles = {
+    ACA: {
+        "Airbus A220-300": "AC A220-300.avif",
+        "Airbus A320-200": "AC A320-200.avif",
+        "Airbus A321-200": "AC A321-200.avif",
+        "Airbus A321-XLR": "AC A321-XLR.jpg",
+        "Airbus A330-300": "AC A330-300.jpg",
+        "Boeing 737 MAX 8": "AC 737 MAX 8.jpeg",
+        "Boeing 777-200LR": "AC 777-200LR.jpg",
+        "Boeing 777-300ER": "AC 777-300ER.png",
+        "Boeing 787-8": "AC 787-8.jpg",
+        "Boeing 787-9": "AC 787-9.jpg"
+    }
+};
 
 export function CreateDeterministicModelOrder(models, seed = 37) {
     const orderedModels = [...models];
@@ -77,14 +114,39 @@ function ShuffleModelOrder(models) {
     return shuffledModels;
 }
 
-export function AssignAircraftModels(planes, models = CommercialJetModels) {
-    const orderedModels = ShuffleModelOrder(models);
-    const orderedAirlines = ShuffleModelOrder(WeightedMajorAirlines);
+function GetConfiguredAirlinePools(models) {
+    const availableModels = new Set(models);
 
-    return planes.map((plane, index) => ({
-        ...plane,
-        aircraftModel: orderedModels[index % orderedModels.length],
-        airlineName: orderedAirlines[index % orderedAirlines.length].name,
-        airlineCode: orderedAirlines[index % orderedAirlines.length].code
-    }));
+    return ShuffleModelOrder(WeightedMajorAirlines).map((airline) => {
+        const configuredModels = (AirlineAircraftAssignments[airline.code] ?? [])
+            .filter((model, index, airlineModels) => (
+                availableModels.has(model)
+                && airlineModels.indexOf(model) === index
+            ));
+
+        return {
+            airline,
+            models: ShuffleModelOrder(configuredModels.length > 0 ? configuredModels : models)
+        };
+    });
+}
+
+export function AssignAircraftModels(planes, models = CommercialJetModels) {
+    const availableModels = models.length > 0 ? models : CommercialJetModels;
+    const airlinePools = GetConfiguredAirlinePools(availableModels);
+    const assignmentCountByAirlineCode = new Map();
+
+    return planes.map((plane, index) => {
+        const airlinePool = airlinePools[index % airlinePools.length];
+        const assignmentCount = assignmentCountByAirlineCode.get(airlinePool.airline.code) ?? 0;
+
+        assignmentCountByAirlineCode.set(airlinePool.airline.code, assignmentCount + 1);
+
+        return {
+            ...plane,
+            aircraftModel: airlinePool.models[assignmentCount % airlinePool.models.length],
+            airlineName: airlinePool.airline.name,
+            airlineCode: airlinePool.airline.code
+        };
+    });
 }
