@@ -117,6 +117,12 @@ export const AirlineAircraftAssignments = {
         "Boeing 767-300ER",
         "Boeing 767-400ER"
     ],
+    JBU: [
+        "Airbus A220-300",
+        "Airbus A321-200",
+        "Airbus A321 LR",
+        "Airbus A321neo"
+    ],
     UAL: [
         "Airbus A319-100",
         "Airbus A320-200",
@@ -229,6 +235,12 @@ export const AirlineAircraftPhotoFiles = {
         "Embraer E145": "UA EMB145.jpg",
         "Embraer E170": "UA ERJ170.jpg",
         "Embraer E175": "UA ERJ175.jpg"
+    },
+    JBU: {
+        "Airbus A220-300": "JB A220.jpg",
+        "Airbus A321-200": "JB A321.jpg",
+        "Airbus A321 LR": "JB A321 LR.jpeg",
+        "Airbus A321neo": "JB A321 NEO.webp"
     },
     TSC: {
         "Airbus A321-200": "AT A321.webp",
