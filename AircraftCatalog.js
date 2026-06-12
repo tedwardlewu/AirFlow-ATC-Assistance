@@ -9,6 +9,7 @@ export const CommercialJetModels = [
     "Airbus A319neo",
     "Airbus A320-200",
     "Airbus A320neo",
+    "Airbus A321-100",
     "Airbus A321-200",
     "Airbus A321 LR",
     "Airbus A321 Transcon",
@@ -26,6 +27,7 @@ export const CommercialJetModels = [
     "Airbus A340-600",
     "Airbus A350-900",
     "Airbus A350-1000",
+    "Airbus A350F",
     "Airbus A380-800",
     "Boeing 707-320",
     "Boeing 717-200",
@@ -52,6 +54,7 @@ export const CommercialJetModels = [
     "Boeing 777-200ER",
     "Boeing 777-300",
     "Boeing 777-300ER",
+    "Boeing 777F",
     "Boeing 777-8",
     "Boeing 777-9",
     "Boeing 787-8",
@@ -98,6 +101,22 @@ export const AirlineAircraftAssignments = {
         "Embraer E170",
         "Embraer E175"
     ],
+    AFR: [
+        "Airbus A220-300",
+        "Airbus A318-100",
+        "Airbus A319-100",
+        "Airbus A320-200",
+        "Airbus A321-100",
+        "Airbus A321-200",
+        "Airbus A330-200",
+        "Airbus A350-900",
+        "Airbus A350-1000",
+        "Airbus A350F",
+        "Boeing 777-200ER",
+        "Boeing 777-300ER",
+        "Boeing 777F",
+        "Boeing 787-9"
+    ],
     DAL: [
         "Airbus A220-100",
         "Airbus A220-300",
@@ -136,6 +155,12 @@ export const AirlineAircraftAssignments = {
         "Airbus A330-200",
         "Boeing 717-200",
         "Boeing 787-9"
+    ],
+    SWA: [
+        "Boeing 737 MAX 7",
+        "Boeing 737 MAX 8",
+        "Boeing 737-700",
+        "Boeing 737-800"
     ],
     UAL: [
         "Airbus A319-100",
@@ -207,6 +232,19 @@ export const AirlineAircraftPhotoFiles = {
         "Embraer E170": "AA E170.avif",
         "Embraer E175": "AA E175.jpg"
     },
+    AFR: {
+        "Airbus A220-300": "AF A220300.jpg",
+        "Airbus A318-100": "AF A318-100.jpg",
+        "Airbus A319-100": "AF A319-100.jpg",
+        "Airbus A320-200": "AF A320-200.jpg",
+        "Airbus A321-100": "AF A321-100.jpg",
+        "Airbus A321-200": "AF A321-200.jpg",
+        "Airbus A330-200": "AF A330-200.jpg",
+        "Airbus A350-900": "AF A350-900.jpg",
+        "Boeing 777-200ER": "AF 777-200ER.jpg",
+        "Boeing 777-300ER": "AF 777-300ER.jpg",
+        "Boeing 787-9": "AF 787-9.avif"
+    },
     DAL: {
         "Airbus A220-100": "Delta A220.webp",
         "Airbus A220-300": "Delta A220 300.jpeg",
@@ -269,6 +307,12 @@ export const AirlineAircraftPhotoFiles = {
         "Airbus A330-200": "AL A330-200.avif",
         "Boeing 717-200": "AL 717 200.jpg",
         "Boeing 787-9": "AL 787-9.jpg"
+    },
+    SWA: {
+        "Boeing 737 MAX 7": "SW 737 MAX 7.jpeg",
+        "Boeing 737 MAX 8": "SW 737 MAX 8.webp",
+        "Boeing 737-700": "SW 737 7000.jpeg",
+        "Boeing 737-800": "SW 737 800.jpg"
     },
     TSC: {
         "Airbus A321-200": "AT A321.webp",
