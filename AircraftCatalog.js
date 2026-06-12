@@ -123,6 +123,20 @@ export const AirlineAircraftAssignments = {
         "Airbus A321 LR",
         "Airbus A321neo"
     ],
+    ASA: [
+        "Boeing 737-700",
+        "Boeing 737-800",
+        "Boeing 737-900",
+        "Boeing 737 MAX 8",
+        "Boeing 737 MAX 9",
+        "Embraer E175"
+    ],
+    HAL: [
+        "Airbus A321neo",
+        "Airbus A330-200",
+        "Boeing 717-200",
+        "Boeing 787-9"
+    ],
     UAL: [
         "Airbus A319-100",
         "Airbus A320-200",
@@ -241,6 +255,20 @@ export const AirlineAircraftPhotoFiles = {
         "Airbus A321-200": "JB A321.jpg",
         "Airbus A321 LR": "JB A321 LR.jpeg",
         "Airbus A321neo": "JB A321 NEO.webp"
+    },
+    ASA: {
+        "Boeing 737-700": "AL 737 700.avif",
+        "Boeing 737-800": "AL 737 800.jpg",
+        "Boeing 737-900": "AL 737 900.jpg",
+        "Boeing 737 MAX 8": "AL 737 MAX 8.jpg",
+        "Boeing 737 MAX 9": "AL 737 MAX 9.webp",
+        "Embraer E175": "AL E175.jpg"
+    },
+    HAL: {
+        "Airbus A321neo": "AL A321 NEO.webp",
+        "Airbus A330-200": "AL A330-200.avif",
+        "Boeing 717-200": "AL 717 200.jpg",
+        "Boeing 787-9": "AL 787-9.jpg"
     },
     TSC: {
         "Airbus A321-200": "AT A321.webp",
