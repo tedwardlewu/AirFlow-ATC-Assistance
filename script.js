@@ -3,7 +3,7 @@ import "leaflet/dist/leaflet.css";
 import montrealYulKml from "./Media/Montreal YUL.kml?raw";
 import planeLogo from "./Media/Plane Logo.png";
 import { MajorAirlines } from "./AirlineCatalog.js";
-import { AirlineAircraftPhotoFiles, AssignAircraftModels } from "./AircraftCatalog.js";
+import { AirlineAircraftAssignments, AirlineAircraftPhotoFiles, AssignAircraftModels } from "./AircraftCatalog.js";
 import { createPlaneArrivalOperations, createPlaneArrivalSpawner } from "./arrivals.js";
 import { createPlaneDepartureOperations } from "./departures.js";
 
@@ -277,6 +277,16 @@ const movingAssets = [
 const startupOccupancyRatio = 0.64;
 const startupInboundShare = 0.08;
 const startupOpenStandReserve = 4;
+const configuredStartupAirlineCodes = Object.entries(AirlineAircraftAssignments)
+    .filter(([, assignedModels]) => Array.isArray(assignedModels) && assignedModels.length > 0)
+    .map(([airlineCode]) => airlineCode);
+const minimumPlanesPerConfiguredAirline = 2;
+const minimumStartupPlaneCount = configuredStartupAirlineCodes.length * minimumPlanesPerConfiguredAirline;
+const minimumStartupAssignmentsByAirlineCode = Object.fromEntries(
+    configuredStartupAirlineCodes.map((airlineCode) => [airlineCode, minimumPlanesPerConfiguredAirline])
+);
+minimumStartupAssignmentsByAirlineCode.DLH = Math.max(minimumStartupAssignmentsByAirlineCode.DLH ?? 0, 5);
+minimumStartupAssignmentsByAirlineCode.KLM = Math.max(minimumStartupAssignmentsByAirlineCode.KLM ?? 0, 5);
 const arrivalSpawnIntervalMs = 60000;
 const arrivalSpawnDistanceMeters = 15000;
 const arrivalApproachLineColor = "#6cff9d";
@@ -974,9 +984,11 @@ function createStartupTraffic(parkingEntries, runwayEntries, occupancyRatio = st
         1,
         Math.min(shuffledParkingEntries.length, Math.floor(shuffledParkingEntries.length * occupancyRatio))
     );
+    const maxStartupPlaneCount = Math.max(shuffledParkingEntries.length - startupOpenStandReserve, 1);
+    const minimumRequiredStartupPlaneCount = Math.min(minimumStartupPlaneCount, maxStartupPlaneCount);
     const targetPlaneCount = Math.max(
         1,
-        Math.min(uncappedTargetPlaneCount, Math.max(shuffledParkingEntries.length - startupOpenStandReserve, 1))
+        Math.min(maxStartupPlaneCount, Math.max(uncappedTargetPlaneCount, minimumRequiredStartupPlaneCount))
     );
     const inboundPlaneCount = runwayEntries.length && targetPlaneCount > 1 && inboundShare > 0
         ? Math.max(1, Math.min(targetPlaneCount - 1, Math.round(targetPlaneCount * inboundShare)))
@@ -1022,10 +1034,7 @@ function createStartupTraffic(parkingEntries, runwayEntries, occupancyRatio = st
     const basePlanes = [...departurePlanes, ...arrivalPlanes];
 
     return AssignAircraftModels(basePlanes, undefined, {
-        minimumAssignmentsByAirlineCode: {
-            DLH: 5,
-            KLM: 5
-        },
+        minimumAssignmentsByAirlineCode: minimumStartupAssignmentsByAirlineCode,
         minimumAircraftModels: [
             "Boeing 777-300ER",
             "Boeing 747-400"
@@ -3537,9 +3546,11 @@ function setupMap() {
                 return;
             }
 
+            const previousScrollTop = planeControlList.scrollTop;
             lastPlaneControlPanelRenderAt = renderTimestamp;
             lastPlaneControlPanelMarkup = nextMarkup;
             planeControlList.innerHTML = nextMarkup;
+            planeControlList.scrollTop = previousScrollTop;
         }
 
         function handlePlaneControlAction(plane, button) {
