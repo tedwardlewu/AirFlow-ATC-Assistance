@@ -276,7 +276,7 @@ const movingAssets = [
 
 const startupOccupancyRatio = 1;
 const startupInboundShare = 0.08;
-const startupOpenStandReserve = 0;
+const startupOpenStandReserve = 10;
 const startupAirlineCodes = MajorAirlines.map((airline) => airline.code);
 const guaranteedStartupAirlineCodes = ["KLM", "DLH"];
 const guaranteedPlanesPerPriorityAirline = 5;
@@ -988,16 +988,16 @@ function getNearestGateMarker(point) {
 
 function createStartupTraffic(parkingEntries, runwayEntries, occupancyRatio = startupOccupancyRatio, inboundShare = startupInboundShare) {
     const shuffledParkingEntries = shuffleItems(parkingEntries);
-    const uncappedTargetPlaneCount = Math.max(
-        1,
-        Math.min(shuffledParkingEntries.length, Math.floor(shuffledParkingEntries.length * occupancyRatio))
+    const maxStartupPlaneCountByStands = Math.max(shuffledParkingEntries.length - startupOpenStandReserve, 0);
+    const uncappedTargetPlaneCount = Math.min(
+        maxStartupPlaneCountByStands,
+        Math.floor(shuffledParkingEntries.length * occupancyRatio)
     );
-    const maxStartupPlaneCountByStands = Math.max(shuffledParkingEntries.length - startupOpenStandReserve, 1);
     const maxStartupPlaneCount = Math.min(maxStartupPlaneCountByStands, maximumStartupPlaneCount);
     const minimumRequiredStartupPlaneCount = Math.min(minimumStartupPlaneCount, maxStartupPlaneCount);
-    const targetPlaneCount = Math.max(
-        1,
-        Math.min(maxStartupPlaneCount, Math.max(uncappedTargetPlaneCount, minimumRequiredStartupPlaneCount))
+    const targetPlaneCount = Math.min(
+        maxStartupPlaneCount,
+        Math.max(uncappedTargetPlaneCount, minimumRequiredStartupPlaneCount)
     );
     const inboundPlaneCount = runwayEntries.length && targetPlaneCount > 1 && inboundShare > 0
         ? Math.max(1, Math.min(targetPlaneCount - 1, Math.round(targetPlaneCount * inboundShare)))

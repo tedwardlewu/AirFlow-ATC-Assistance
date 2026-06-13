@@ -213,6 +213,76 @@ export const AirlineAircraftAssignments = {
         "Embraer E190",
         "Embraer E195-E2"
     ],
+    IBE: [
+        "Airbus A319-100",
+        "Airbus A320-200",
+        "Airbus A320neo",
+        "Airbus A321-200",
+        "Airbus A321-XLR",
+        "Airbus A330-200",
+        "Airbus A330-300",
+        "Airbus A350-900"
+    ],
+    EIN: [
+        "Airbus A320-200",
+        "Airbus A320neo",
+        "Airbus A321 LR",
+        "Airbus A321-XLR",
+        "Airbus A330-200",
+        "Airbus A330-300"
+    ],
+    THY: [
+        "Airbus A319-100",
+        "Airbus A320-200",
+        "Airbus A321-200",
+        "Airbus A321neo",
+        "Airbus A330-200",
+        "Airbus A330-300",
+        "Airbus A350-900",
+        "Boeing 737-800",
+        "Boeing 737-900",
+        "Boeing 737 MAX 8",
+        "Boeing 737 MAX 9",
+        "Boeing 777-300ER",
+        "Boeing 787-9"
+    ],
+    TAP: [
+        "Airbus A319-100",
+        "Airbus A320-200",
+        "Airbus A320neo",
+        "Airbus A321-200",
+        "Airbus A321 LR",
+        "Airbus A321neo",
+        "Airbus A330-200",
+        "Airbus A330-900neo"
+    ],
+    SAS: [
+        "Airbus A319-100",
+        "Airbus A320-200",
+        "Airbus A320neo",
+        "Airbus A321 LR",
+        "Airbus A330-300",
+        "Airbus A350-900"
+    ],
+    VIR: [
+        "Airbus A330-300",
+        "Airbus A330-900neo",
+        "Airbus A350-1000",
+        "Boeing 787-9"
+    ],
+    SWR: [
+        "Airbus A220-100",
+        "Airbus A220-300",
+        "Airbus A320-200",
+        "Airbus A320neo",
+        "Airbus A321-100",
+        "Airbus A321-200",
+        "Airbus A321neo",
+        "Airbus A330-300",
+        "Airbus A340-300",
+        "Airbus A350-900",
+        "Boeing 777-300ER"
+    ],
     SWA: [
         "Boeing 737 MAX 7",
         "Boeing 737 MAX 8",
@@ -413,6 +483,74 @@ export const AirlineAircraftPhotoFiles = {
         "Embraer E175": "KLM E175.jpeg",
         "Embraer E190": "KLM E190.jpg",
         "Embraer E195-E2": "KLM E195.jpg"
+    },
+    IBE: {
+        "Airbus A319-100": "IBE A319.jpg",
+        "Airbus A320-200": "IBE A320.jpg",
+        "Airbus A320neo": "IBE A320 NEO.jpg",
+        "Airbus A321-200": "IBE A321.jpg",
+        "Airbus A321-XLR": "IBE A321XLR.jpg",
+        "Airbus A330-200": "IBE A330-200.jpg",
+        "Airbus A330-300": "IBE A330-300.jpg",
+        "Airbus A350-900": "IBE A350.jpg"
+    },
+    EIN: {
+        "Airbus A320-200": "EIN A320.jpeg",
+        "Airbus A320neo": "EIN A320 NEO.jpg",
+        "Airbus A321 LR": "EIN A321LRT.jpg",
+        "Airbus A321-XLR": "EIN A321 XLR.avif",
+        "Airbus A330-200": "EIN A330-200.jpg",
+        "Airbus A330-300": "EIN A330-300.webp"
+    },
+    THY: {
+        "Airbus A320-200": "THY A320-200.jpg",
+        "Airbus A321-200": "THY A321 200.avif",
+        "Airbus A321neo": "THY A321-NEO.webp",
+        "Airbus A330-200": "THY A330-200.jpg",
+        "Airbus A330-300": "THY A330-300.jpg",
+        "Airbus A350-900": "THY A350-900.jpg",
+        "Boeing 737-800": "THY 737-800.jpeg",
+        "Boeing 737-900": "THY 737-900.jpg",
+        "Boeing 737 MAX 8": "THY 737 MAX 8.jpg",
+        "Boeing 737 MAX 9": "THY 737 MAX 9.jpg",
+        "Boeing 777-300ER": "THY 777-300ER.avif",
+        "Boeing 787-9": "THY 787-9.jpg"
+    },
+    TAP: {
+        "Airbus A319-100": "TAP A319-100.jpg",
+        "Airbus A320-200": "TAP A320-200.jpg",
+        "Airbus A320neo": "TAP A320-NEO.jpeg",
+        "Airbus A321 LR": "TAP A321LR.avif",
+        "Airbus A321neo": "TAP A321NEO.jpg",
+        "Airbus A330-200": "TAP A330-200.jpg",
+        "Airbus A330-900neo": "TAP A330-900.jpeg"
+    },
+    SAS: {
+        "Airbus A319-100": "SAS A319-100.jpg",
+        "Airbus A320-200": "SAS A320-200.jpg",
+        "Airbus A320neo": "SAS A320 NEO.avif",
+        "Airbus A321 LR": "SAS A321LR.jpg",
+        "Airbus A330-300": "SAS A330-300.jpg",
+        "Airbus A350-900": "SAS A350.jpg"
+    },
+    VIR: {
+        "Airbus A330-300": "VIR A330-300.jpg",
+        "Airbus A330-900neo": "VIR A330-900.jpeg",
+        "Airbus A350-1000": "VIR A350-1000.avif",
+        "Boeing 787-9": "VIR 787-9.jpg"
+    },
+    SWR: {
+        "Airbus A220-100": "SWR A220-100.webp",
+        "Airbus A220-300": "SWR A220-300.jpg",
+        "Airbus A320-200": "SWR A320-200.jpg",
+        "Airbus A320neo": "SWR A320-NEO.jpg",
+        "Airbus A321-100": "SWR A321-100.jpg",
+        "Airbus A321-200": "SWR A321-200.jpg",
+        "Airbus A321neo": "SWR A321-NEO.jpg",
+        "Airbus A330-300": "SWR A330-300.jpeg",
+        "Airbus A340-300": "SWR A340-300.jpg",
+        "Airbus A350-900": "SWR A350 900.jpg",
+        "Boeing 777-300ER": "SWR 777.jpg"
     },
     SWA: {
         "Boeing 737 MAX 7": "SW 737 MAX 7.jpeg",
