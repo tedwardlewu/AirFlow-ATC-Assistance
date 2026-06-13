@@ -457,6 +457,66 @@ function ShuffleModelOrder(models) {
     return shuffledModels;
 }
 
+function NormalizeAssignmentLimitMap(limitByAirlineCode = {}) {
+    return new Map(
+        Object.entries(limitByAirlineCode)
+            .map(([airlineCode, limit]) => [airlineCode, Math.max(0, Math.floor(limit))])
+            .filter(([, limit]) => Number.isFinite(limit))
+    );
+}
+
+function NormalizeAssignmentCountMap(existingAssignmentsByAirlineCode = {}) {
+    if (existingAssignmentsByAirlineCode instanceof Map) {
+        return new Map(
+            Array.from(existingAssignmentsByAirlineCode.entries())
+                .map(([airlineCode, count]) => [airlineCode, Math.max(0, Math.floor(count))])
+                .filter(([, count]) => Number.isFinite(count))
+        );
+    }
+
+    return new Map(
+        Object.entries(existingAssignmentsByAirlineCode)
+            .map(([airlineCode, count]) => [airlineCode, Math.max(0, Math.floor(count))])
+            .filter(([, count]) => Number.isFinite(count))
+    );
+}
+
+function GetOutstandingMinimumAssignments(assignmentCountByAirlineCode, minimumAssignmentsByAirlineCode) {
+    return Array.from(minimumAssignmentsByAirlineCode.entries()).reduce((outstandingAssignments, [airlineCode, minimumAssignments]) => {
+        const currentAssignments = assignmentCountByAirlineCode.get(airlineCode) ?? 0;
+        return outstandingAssignments + Math.max(minimumAssignments - currentAssignments, 0);
+    }, 0);
+}
+
+function SelectAirlinePool(airlinePools, assignmentCountByAirlineCode, minimumAssignmentsByAirlineCode, maximumAssignmentsByAirlineCode, assignmentIndex) {
+    const eligibleAirlinePools = airlinePools.filter((airlinePool) => {
+        const assignmentCount = assignmentCountByAirlineCode.get(airlinePool.airline.code) ?? 0;
+        const maximumAssignments = maximumAssignmentsByAirlineCode.get(airlinePool.airline.code) ?? Number.POSITIVE_INFINITY;
+
+        return assignmentCount < maximumAssignments;
+    });
+
+    if (!eligibleAirlinePools.length) {
+        return null;
+    }
+
+    const outstandingMinimumAssignments = GetOutstandingMinimumAssignments(
+        assignmentCountByAirlineCode,
+        minimumAssignmentsByAirlineCode
+    );
+    const requiredAirlinePools = eligibleAirlinePools.filter((airlinePool) => {
+        const assignmentCount = assignmentCountByAirlineCode.get(airlinePool.airline.code) ?? 0;
+        const minimumAssignments = minimumAssignmentsByAirlineCode.get(airlinePool.airline.code) ?? 0;
+
+        return assignmentCount < minimumAssignments;
+    });
+    const sourceAirlinePools = outstandingMinimumAssignments > 0 && requiredAirlinePools.length
+        ? requiredAirlinePools
+        : eligibleAirlinePools;
+
+    return sourceAirlinePools[assignmentIndex % sourceAirlinePools.length];
+}
+
 function GetConfiguredAirlinePools(models, minimumAssignmentsByAirlineCode = {}, minimumAircraftModels = []) {
     const availableModels = new Set(models);
     const prioritizedModelPools = minimumAircraftModels.flatMap((model) => {
@@ -500,15 +560,28 @@ function GetConfiguredAirlinePools(models, minimumAssignmentsByAirlineCode = {},
 
 export function AssignAircraftModels(planes, models = CommercialJetModels, options = {}) {
     const availableModels = models.length > 0 ? models : CommercialJetModels;
+    const minimumAssignmentsByAirlineCode = NormalizeAssignmentLimitMap(options.minimumAssignmentsByAirlineCode);
+    const maximumAssignmentsByAirlineCode = NormalizeAssignmentLimitMap(options.maximumAssignmentsByAirlineCode);
     const airlinePools = GetConfiguredAirlinePools(
         availableModels,
-        options.minimumAssignmentsByAirlineCode,
+        Object.fromEntries(minimumAssignmentsByAirlineCode),
         options.minimumAircraftModels
     );
-    const assignmentCountByAirlineCode = new Map();
+    const assignmentCountByAirlineCode = NormalizeAssignmentCountMap(options.existingAssignmentsByAirlineCode);
 
     return planes.map((plane, index) => {
-        const airlinePool = airlinePools[index % airlinePools.length];
+        const airlinePool = SelectAirlinePool(
+            airlinePools,
+            assignmentCountByAirlineCode,
+            minimumAssignmentsByAirlineCode,
+            maximumAssignmentsByAirlineCode,
+            index
+        );
+
+        if (!airlinePool) {
+            return options.returnNullWhenUnassigned ? null : plane;
+        }
+
         const assignmentCount = assignmentCountByAirlineCode.get(airlinePool.airline.code) ?? 0;
 
         assignmentCountByAirlineCode.set(airlinePool.airline.code, assignmentCount + 1);

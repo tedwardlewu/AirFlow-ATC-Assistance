@@ -265,7 +265,9 @@ export function createPlaneArrivalSpawner(dependencies) {
         attachPlanePopupHandlers,
         syncArrivalGuideLine,
         renderPlaneControlPanel,
-        setLanding
+        setLanding,
+        minimumAssignmentsByAirlineCode,
+        maximumAssignmentsByAirlineCode
     } = dependencies;
     let nextArrivalRunwayIndex = 0;
 
@@ -299,6 +301,14 @@ export function createPlaneArrivalSpawner(dependencies) {
     }
 
     function selectArrivalSpawn(runwayCandidates, availableParkingEntries) {
+        const existingAssignmentsByAirlineCode = animatedPlanes.reduce((assignmentCounts, plane) => {
+            if (plane.airlineCode) {
+                assignmentCounts.set(plane.airlineCode, (assignmentCounts.get(plane.airlineCode) ?? 0) + 1);
+            }
+
+            return assignmentCounts;
+        }, new Map());
+
         for (const runwayEntry of runwayCandidates) {
             for (const parkingEntry of availableParkingEntries) {
                 const standPoint = interpolatePath(getLinePoints(parkingEntry), 0.5);
@@ -314,7 +324,12 @@ export function createPlaneArrivalSpawner(dependencies) {
                         arrivalRunwayName: runwayEntry.name,
                         speed: 0.0042 + (Math.random() * 0.001)
                     }
-                ]);
+                ], undefined, {
+                    minimumAssignmentsByAirlineCode,
+                    maximumAssignmentsByAirlineCode,
+                    existingAssignmentsByAirlineCode,
+                    returnNullWhenUnassigned: true
+                });
 
                 if (!arrivalTemplate) {
                     continue;
