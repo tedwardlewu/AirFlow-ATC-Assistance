@@ -1021,7 +1021,16 @@ function createStartupTraffic(parkingEntries, runwayEntries, occupancyRatio = st
 
     const basePlanes = [...departurePlanes, ...arrivalPlanes];
 
-    return AssignAircraftModels(basePlanes).map((plane, index) => {
+    return AssignAircraftModels(basePlanes, undefined, {
+        minimumAssignmentsByAirlineCode: {
+            DLH: 5,
+            KLM: 5
+        },
+        minimumAircraftModels: [
+            "Boeing 777-300ER",
+            "Boeing 747-400"
+        ]
+    }).map((plane, index) => {
         const numericSuffix = 100 + ((Math.floor(Math.random() * 900) + (index * 37)) % 900);
 
         return {

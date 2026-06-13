@@ -59,7 +59,7 @@ body::after {
     left: 18px;
     right: 18px;
     bottom: 18px;
-    border-radius: 28px;
+    border-radius: 18px;
     border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
@@ -75,7 +75,7 @@ body::after {
     padding: 14px 0;
     max-width: 1800px;
     min-height: calc(100vh - 28px);
-    border-radius: 24px;
+    border-radius: 16px;
     background: linear-gradient(180deg, rgba(15, 22, 30, 0.98), rgba(8, 12, 18, 0.98));
     border: 1px solid rgba(164, 182, 197, 0.12);
     box-shadow: var(--shadow);
@@ -92,7 +92,7 @@ body::after {
     padding: 18px 20px;
     background: linear-gradient(180deg, rgba(19, 28, 39, 0.98), rgba(13, 19, 27, 0.98));
     border: 1px solid var(--line);
-    border-radius: 18px;
+    border-radius: 12px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
 }
 
@@ -208,7 +208,7 @@ body::after {
 .panel {
     background: linear-gradient(180deg, var(--panel-soft), var(--panel));
     border: 1px solid var(--line);
-    border-radius: 18px;
+    border-radius: 12px;
     color: var(--text);
     box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
     backdrop-filter: blur(14px);
@@ -224,7 +224,7 @@ body::after {
     padding: 0;
     min-height: 82vh;
     overflow: hidden;
-    border-radius: 20px;
+    border-radius: 14px;
 }
 
 .stats-card {
@@ -295,14 +295,15 @@ body::after {
 .map-legend-overlay {
     position: absolute;
     top: 14px;
-    left: 16px;
+    left: 50%;
+    transform: translateX(-50%);
     z-index: 25;
     gap: 8px;
-    padding: 10px 12px;
-    border-radius: 12px;
-    background: rgba(9, 14, 20, 0.92);
-    border: 1px solid rgba(142, 162, 178, 0.16);
-    backdrop-filter: blur(10px);
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    border: 0;
+    backdrop-filter: none;
 }
 
 .legend-chip {
@@ -1375,8 +1376,9 @@ body::after {
 
     .map-legend-overlay {
         top: 12px;
-        left: 12px;
-        right: 12px;
+        left: 50%;
+        right: auto;
+        transform: translateX(-50%);
         max-width: calc(100% - 24px);
     }
 
