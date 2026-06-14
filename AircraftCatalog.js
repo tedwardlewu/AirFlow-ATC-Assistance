@@ -66,6 +66,10 @@ export const CommercialJetModels = [
     "Boeing 787-8",
     "Boeing 787-9",
     "Boeing 787-10",
+    "Comac C909",
+    "Comac C919-100ER",
+    "ATR 72-500",
+    "ATR 72-600",
     "De Havilland Dash 8-400",
     "Embraer E145",
     "Embraer E170",
@@ -140,6 +144,26 @@ export const AirlineAircraftAssignments = {
         "Boeing 787-10",
         "Embraer E190"
     ],
+    CCA: [
+        "Airbus A319-100",
+        "Airbus A319neo",
+        "Airbus A320-200",
+        "Airbus A320neo",
+        "Airbus A321-200",
+        "Airbus A321neo",
+        "Airbus A330-200",
+        "Airbus A330-300",
+        "Airbus A350-900",
+        "Boeing 737-700",
+        "Boeing 737-800",
+        "Boeing 737 MAX 8",
+        "Boeing 747-400",
+        "Boeing 747-8I",
+        "Boeing 777-300ER",
+        "Boeing 787-9",
+        "Comac C909",
+        "Comac C919-100ER"
+    ],
     DLH: [
         "Airbus A319-100",
         "Airbus A320-200",
@@ -213,6 +237,17 @@ export const AirlineAircraftAssignments = {
         "Embraer E190",
         "Embraer E195-E2"
     ],
+    ITY: [
+        "Airbus A220-100",
+        "Airbus A220-300",
+        "Airbus A319-100",
+        "Airbus A320-200",
+        "Airbus A320neo",
+        "Airbus A321 LR",
+        "Airbus A330-200",
+        "Airbus A330-900neo",
+        "Airbus A350-900"
+    ],
     IBE: [
         "Airbus A319-100",
         "Airbus A320-200",
@@ -230,6 +265,17 @@ export const AirlineAircraftAssignments = {
         "Airbus A321-XLR",
         "Airbus A330-200",
         "Airbus A330-300"
+    ],
+    FIN: [
+        "Airbus A319-100",
+        "Airbus A320-200",
+        "Airbus A321-200",
+        "Airbus A330-300",
+        "Airbus A350-900",
+        "ATR 72-500",
+        "ATR 72-600",
+        "Embraer E190",
+        "Embraer E195-E2"
     ],
     THY: [
         "Airbus A319-100",
@@ -387,6 +433,25 @@ export const AirlineAircraftPhotoFiles = {
         "Boeing 787-10": "BA 787-10.jpg",
         "Embraer E190": "BA E190.jpg"
     },
+    CCA: {
+        "Airbus A319-100": "CCA A319-100.jpg",
+        "Airbus A319neo": "CCA A319-neo.jpg",
+        "Airbus A320-200": "CCA A320-200.jpg",
+        "Airbus A321-200": "CCA A321-200.jpg",
+        "Airbus A321neo": "CCA A321-neo.jpg",
+        "Airbus A330-200": "CCA A330-200.jpg",
+        "Airbus A330-300": "CCA A330-300.jpg",
+        "Airbus A350-900": "CCA A350-900.jpg",
+        "Boeing 737-700": "CCA 737-700.jpg",
+        "Boeing 737-800": "CCA 737 800.jpg",
+        "Boeing 737 MAX 8": "CCA 737 MAX 8.webp",
+        "Boeing 747-400": "CCA 747-400.jpg",
+        "Boeing 747-8I": "CCA 747-8.webp",
+        "Boeing 777-300ER": "CCA 777-300ER.jpg",
+        "Boeing 787-9": "CCA 787-9.jpg",
+        "Comac C909": "CCA C909.avif",
+        "Comac C919-100ER": "CCA C919.jpg"
+    },
     DLH: {
         "Airbus A319-100": "DLH A319-100.jpg",
         "Airbus A320-200": "DLH A319-200.jpeg",
@@ -484,6 +549,16 @@ export const AirlineAircraftPhotoFiles = {
         "Embraer E190": "KLM E190.jpg",
         "Embraer E195-E2": "KLM E195.jpg"
     },
+    ITY: {
+        "Airbus A220-100": "ITA A220-100.avif",
+        "Airbus A220-300": "ITA A220-300.jpg",
+        "Airbus A319-100": "ITA A319-100.jpg",
+        "Airbus A320-200": "ITA A320-200.jpg",
+        "Airbus A321 LR": "ITA A321-neo.webp",
+        "Airbus A330-200": "ITA A330-200.jpeg",
+        "Airbus A330-900neo": "ITA A330-900.jpeg",
+        "Airbus A350-900": "ITA A350-900.avif"
+    },
     IBE: {
         "Airbus A319-100": "IBE A319.jpg",
         "Airbus A320-200": "IBE A320.jpg",
@@ -501,6 +576,17 @@ export const AirlineAircraftPhotoFiles = {
         "Airbus A321-XLR": "EIN A321 XLR.avif",
         "Airbus A330-200": "EIN A330-200.jpg",
         "Airbus A330-300": "EIN A330-300.webp"
+    },
+    FIN: {
+        "Airbus A319-100": "FIN A319-100.jpg",
+        "Airbus A320-200": "FIN A320-200.jpg",
+        "Airbus A321-200": "FIN A321-200.jpg",
+        "Airbus A330-300": "FIN A330-300.jpg",
+        "Airbus A350-900": "FIN A350-900.jpeg",
+        "ATR 72-500": "FIN ATR 72-500.jpg",
+        "ATR 72-600": "FIN ATR 72-600.jpg",
+        "Embraer E190": "FIN E190.jpg",
+        "Embraer E195-E2": "FIN E195 E2.jpeg"
     },
     THY: {
         "Airbus A320-200": "THY A320-200.jpg",
