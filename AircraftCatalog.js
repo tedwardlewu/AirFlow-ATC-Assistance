@@ -251,6 +251,17 @@ export const AirlineAircraftAssignments = {
         "Boeing 717-200",
         "Boeing 787-9"
     ],
+    JAL: [
+        "Airbus A321neo",
+        "Airbus A350-900",
+        "Airbus A350-1000",
+        "Boeing 737-800",
+        "Boeing 737 MAX 8",
+        "Boeing 767-300ER",
+        "Boeing 777-300ER",
+        "Boeing 787-8",
+        "Boeing 787-9"
+    ],
     KLM: [
         "Airbus A330-200",
         "Airbus A330-300",
@@ -341,6 +352,17 @@ export const AirlineAircraftAssignments = {
         "Airbus A321 LR",
         "Airbus A330-300",
         "Airbus A350-900"
+    ],
+    SIA: [
+        "Airbus A350-900",
+        "Airbus A350F",
+        "Airbus A380-800",
+        "Boeing 737 MAX 8",
+        "Boeing 747-400",
+        "Boeing 777-300ER",
+        "Boeing 777-9",
+        "Boeing 777F",
+        "Boeing 787-10"
     ],
     VIR: [
         "Airbus A330-300",
@@ -597,6 +619,16 @@ export const AirlineAircraftPhotoFiles = {
         "Boeing 717-200": "AL 717 200.jpg",
         "Boeing 787-9": "AL 787-9.jpg"
     },
+    JAL: {
+        "Airbus A321neo": "JAL A321-neo.jpg",
+        "Airbus A350-900": "JAL A350-900.jpg",
+        "Airbus A350-1000": "JAL A350-1000.avif",
+        "Boeing 737-800": "JAL 737-800.jpg",
+        "Boeing 737 MAX 8": "JAL 737 MAX 8.jpg",
+        "Boeing 767-300ER": "JAL 767-300ER.avif",
+        "Boeing 787-8": "JAL 787-8.jpg",
+        "Boeing 787-9": "JAL 787-9.webp"
+    },
     KLM: {
         "Airbus A330-200": "KLM A330-200.jpg",
         "Airbus A330-300": "KLM A330-300.jpeg",
@@ -684,6 +716,17 @@ export const AirlineAircraftPhotoFiles = {
         "Airbus A321 LR": "SAS A321LR.jpg",
         "Airbus A330-300": "SAS A330-300.jpg",
         "Airbus A350-900": "SAS A350.jpg"
+    },
+    SIA: {
+        "Airbus A350-900": "SIA A350-900ULR.jpg",
+        "Airbus A350F": "SIA A350F.jpg",
+        "Airbus A380-800": "SIA A80-800.jpg",
+        "Boeing 737 MAX 8": "SIA 737 MAX 8.jpg",
+        "Boeing 747-400": "SIA 747-400F.avif",
+        "Boeing 777-300ER": "SIA 777-300ER.jpg",
+        "Boeing 777-9": "SIA 777-9.webp",
+        "Boeing 777F": "SIA 777F.jpg",
+        "Boeing 787-10": "SIA 787-10.jpg"
     },
     VIR: {
         "Airbus A330-300": "VIR A330-300.jpg",
