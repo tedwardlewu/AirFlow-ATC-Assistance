@@ -1,0 +1,10 @@
+SELECt * FROM users WHERE active = 1;
+SELECT * FROM customers WHERE country = 'Canada';
+SELECT * FROM products ORDER BY price ASC;
+SELECT COUNT (*) FROM orders WHERE status = 'pending';
+SELECT * FROM users WHERE age > 18 AND active = 1;
+SELECT email FROM users;
+SELECt * FROM products WHERE price > 500;
+SELECT * FROM employees ORDER BY name ASC;
+SELECt country, COUNT (*) FROM users GROUP BY country;
+SELECT * FROM orders WHERE status = 'completed' ORDER BY order_date DESC;
