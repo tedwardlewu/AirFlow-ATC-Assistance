@@ -129,6 +129,22 @@ export const AirlineAircraftAssignments = {
         "Boeing 777F",
         "Boeing 787-9"
     ],
+    ANA: [
+        "Airbus A320neo",
+        "Airbus A321-200",
+        "Airbus A321neo",
+        "Airbus A380-800",
+        "Boeing 737-800",
+        "Boeing 767-300ER",
+        "Boeing 777-200",
+        "Boeing 777-200ER",
+        "Boeing 777-300",
+        "Boeing 777-300ER",
+        "Boeing 777F",
+        "Boeing 787-8",
+        "Boeing 787-9",
+        "Boeing 787-10"
+    ],
     BAW: [
         "Airbus A319-100",
         "Airbus A320-200",
@@ -160,6 +176,22 @@ export const AirlineAircraftAssignments = {
         "Boeing 747-400",
         "Boeing 747-8I",
         "Boeing 777-300ER",
+        "Boeing 787-9",
+        "Comac C909",
+        "Comac C919-100ER"
+    ],
+    CSN: [
+        "Airbus A319neo",
+        "Airbus A320-200",
+        "Airbus A320neo",
+        "Airbus A321-200",
+        "Airbus A321neo",
+        "Airbus A330-300",
+        "Airbus A350-900",
+        "Boeing 737-800",
+        "Boeing 737 MAX 8",
+        "Boeing 777-300ER",
+        "Boeing 777F",
         "Boeing 787-9",
         "Comac C909",
         "Comac C919-100ER"
@@ -418,6 +450,24 @@ export const AirlineAircraftPhotoFiles = {
         "Boeing 777-300ER": "AF 777-300ER.jpg",
         "Boeing 787-9": "AF 787-9.avif"
     },
+    ANA: {
+        "Airbus A320neo": "ANA A320-neo.jpg",
+        "Airbus A321-200": "ANA A321-200.jpeg",
+        "Airbus A321neo": "ANA A321-neo.jpg",
+        "Airbus A380-800": "ANA A380-800.jpg",
+        "Boeing 737-800": "ANA 737-800.jpg",
+        "Boeing 737 MAX 8": "ANA 737 MAX 8.jpg",
+        "Boeing 767-300ER": "ANA 767-300ER.jpg",
+        "Boeing 777-200": "ANA 777-200.jpg",
+        "Boeing 777-200ER": "ANA 777-200ER.jpeg",
+        "Boeing 777-300": "ANA 777-300.jpg",
+        "Boeing 777-300ER": "ANA 777-300ER.jpg",
+        "Boeing 777F": "ANA 777F.jpeg",
+        "Boeing 777-9": "ANA 777-9.jpeg",
+        "Boeing 787-8": "ANA 787-8.jpg",
+        "Boeing 787-9": "ANA 787-9.jpg",
+        "Boeing 787-10": "ANA 787-10.jpg"
+    },
     BAW: {
         "Airbus A319-100": "BA A319.jpg",
         "Airbus A320-200": "BA A320-200.jpg",
@@ -451,6 +501,22 @@ export const AirlineAircraftPhotoFiles = {
         "Boeing 787-9": "CCA 787-9.jpg",
         "Comac C909": "CCA C909.avif",
         "Comac C919-100ER": "CCA C919.jpg"
+    },
+    CSN: {
+        "Airbus A319neo": "CSN A319-neo.jpg",
+        "Airbus A320-200": "CSN A320-200.jpg",
+        "Airbus A320neo": "CSN A320-neo.jpeg",
+        "Airbus A321-200": "CSN A321-200.jpg",
+        "Airbus A321neo": "cSN A321-neo.jpg",
+        "Airbus A330-300": "CSN A330-300.jpg",
+        "Airbus A350-900": "CSN A350-900.avif",
+        "Boeing 737-800": "CSN 737-800.webp",
+        "Boeing 737 MAX 8": "CSN 737 MAx 8.jpg",
+        "Boeing 777-300ER": "CSN 777-300ER.jpeg",
+        "Boeing 777F": "CSN 777F.jpg",
+        "Boeing 787-9": "CSN 787-9.jpg",
+        "Comac C909": "CSN C909.jpg",
+        "Comac C919-100ER": "CSN C919.jpg"
     },
     DLH: {
         "Airbus A319-100": "DLH A319-100.jpg",
