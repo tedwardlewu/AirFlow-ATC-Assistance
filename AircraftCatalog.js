@@ -180,6 +180,14 @@ export const AirlineAircraftAssignments = {
         "Comac C909",
         "Comac C919-100ER"
     ],
+    CPA: [
+        "Airbus A321neo",
+        "Airbus A330-300",
+        "Airbus A350-900",
+        "Airbus A350-1000",
+        "Boeing 777-300",
+        "Boeing 777-300ER"
+    ],
     CSN: [
         "Airbus A319neo",
         "Airbus A320-200",
@@ -523,6 +531,14 @@ export const AirlineAircraftPhotoFiles = {
         "Boeing 787-9": "CCA 787-9.jpg",
         "Comac C909": "CCA C909.avif",
         "Comac C919-100ER": "CCA C919.jpg"
+    },
+    CPA: {
+        "Airbus A321neo": "CPA A321-neo.avif",
+        "Airbus A330-300": "CPA A330-300.jpg",
+        "Airbus A350-900": "CPA A350-900.avif",
+        "Airbus A350-1000": "CPA A350-1000.jpg",
+        "Boeing 777-300": "CPA 777-300.jpg",
+        "Boeing 777-300ER": "CPA 777-300ER.avif"
     },
     CSN: {
         "Airbus A319neo": "CSN A319-neo.jpg",
