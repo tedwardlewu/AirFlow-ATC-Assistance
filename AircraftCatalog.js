@@ -270,6 +270,26 @@ export const AirlineAircraftAssignments = {
         "Boeing 787-8",
         "Boeing 787-9"
     ],
+    KAL: [
+        "Airbus A220-300",
+        "Airbus A321neo",
+        "Airbus A330-300",
+        "Airbus A350-900",
+        "Airbus A350-1000",
+        "Airbus A380-800",
+        "Boeing 737-800",
+        "Boeing 737-900",
+        "Boeing 737 MAX 8",
+        "Boeing 737 MAX 10",
+        "Boeing 747-8I",
+        "Boeing 777-300",
+        "Boeing 777-300ER",
+        "Boeing 777-9",
+        "Boeing 777F",
+        "Boeing 787-9",
+        "Boeing 787-10",
+        "Airbus A350F"
+    ],
     KLM: [
         "Airbus A330-200",
         "Airbus A330-300",
@@ -342,6 +362,16 @@ export const AirlineAircraftAssignments = {
         "Boeing 737 MAX 9",
         "Boeing 777-300ER",
         "Boeing 787-9"
+    ],
+    UAE: [
+        "Airbus A350-900",
+        "Airbus A380-800",
+        "Boeing 777-200LR",
+        "Boeing 777-300ER",
+        "Boeing 777-8",
+        "Boeing 777-9",
+        "Boeing 787-8",
+        "Boeing 787-10"
     ],
     TAP: [
         "Airbus A319-100",
@@ -645,6 +675,26 @@ export const AirlineAircraftPhotoFiles = {
         "Boeing 787-8": "JAL 787-8.jpg",
         "Boeing 787-9": "JAL 787-9.webp"
     },
+    KAL: {
+        "Airbus A220-300": "KAL A220-300.jpg",
+        "Airbus A321neo": "KAL A321-neo.jpeg",
+        "Airbus A330-300": "KAL A330-300.jpg",
+        "Airbus A350-900": "KAL A350-900.jpeg",
+        "Airbus A350-1000": "KAL A350-1000.png",
+        "Airbus A350F": "KAL A350F.png",
+        "Airbus A380-800": "KAL A380-800.jpg",
+        "Boeing 737-800": "KAL 737-800.jpg",
+        "Boeing 737-900": "KAL 737-900.jpg",
+        "Boeing 737 MAX 8": "KAL 737 MAX 8.jpg",
+        "Boeing 737 MAX 10": "KAL 737 MAX 10.webp",
+        "Boeing 747-8I": "KAL 747=8.jpg",
+        "Boeing 777-300": "KAL 777-300.jpg",
+        "Boeing 777-300ER": "KAL 777-300ER.avif",
+        "Boeing 777-9": "KAL 777-9.avif",
+        "Boeing 777F": "KAL 777F.jpg",
+        "Boeing 787-9": "KAL 787-9.jpg",
+        "Boeing 787-10": "KAL 787-10.jpg"
+    },
     KLM: {
         "Airbus A330-200": "KLM A330-200.jpg",
         "Airbus A330-300": "KLM A330-300.jpeg",
@@ -715,6 +765,16 @@ export const AirlineAircraftPhotoFiles = {
         "Boeing 737 MAX 9": "THY 737 MAX 9.jpg",
         "Boeing 777-300ER": "THY 777-300ER.avif",
         "Boeing 787-9": "THY 787-9.jpg"
+    },
+    UAE: {
+        "Airbus A350-900": "UAE A350-900.jpg",
+        "Airbus A380-800": "UAE A380-800.jpg",
+        "Boeing 777-200LR": "UAE 777-200LR.jpg",
+        "Boeing 777-300ER": "UAE 777-300ER.jpg",
+        "Boeing 777-8": "UAE 777-8.jpg",
+        "Boeing 777-9": "UAE 777-9.jpg",
+        "Boeing 787-8": "UAE 787-8.jpg",
+        "Boeing 787-10": "UAE 787-10.jpg"
     },
     TAP: {
         "Airbus A319-100": "TAP A319-100.jpg",
