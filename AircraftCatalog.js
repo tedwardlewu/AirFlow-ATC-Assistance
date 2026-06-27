@@ -21,6 +21,7 @@ export const CommercialJetModels = [
     "Airbus A310-300",
     "Airbus A330-200",
     "Airbus A330-300",
+    "Airbus A330neo",
     "Airbus A330-800neo",
     "Airbus A330-900neo",
     "Airbus A340-200",
@@ -29,6 +30,7 @@ export const CommercialJetModels = [
     "Airbus A340-600",
     "Airbus A350-900",
     "Airbus A350-1000",
+    "Airbus A350-1000ULR",
     "Airbus A350F",
     "Airbus A380-800",
     "Boeing 707-320",
@@ -67,6 +69,7 @@ export const CommercialJetModels = [
     "Boeing 787-9",
     "Boeing 787-10",
     "Comac C909",
+    "Comac C919-100STD",
     "Comac C919-100ER",
     "ATR 72-500",
     "ATR 72-600",
@@ -179,6 +182,24 @@ export const AirlineAircraftAssignments = {
         "Boeing 787-9",
         "Comac C909",
         "Comac C919-100ER"
+    ],
+    CES: [
+        "Airbus A319-100",
+        "Airbus A320-200",
+        "Airbus A320neo",
+        "Airbus A321-200",
+        "Airbus A321neo",
+        "Airbus A330-200",
+        "Airbus A330-300",
+        "Airbus A330neo",
+        "Airbus A350-900",
+        "Boeing 737-700",
+        "Boeing 737-800",
+        "Boeing 737 MAX 8",
+        "Boeing 777-300ER",
+        "Boeing 787-9",
+        "Comac C909",
+        "Comac C919-100STD"
     ],
     CPA: [
         "Airbus A321neo",
@@ -407,6 +428,30 @@ export const AirlineAircraftAssignments = {
             "Boeing 787-9",
             "Boeing 787-10"
         ],
+        QFA: [
+            "Airbus A321-XLR",
+            "Airbus A330-200",
+            "Airbus A330-300",
+            "Airbus A350-1000",
+            "Airbus A350-1000ULR",
+            "Airbus A380-800",
+            "Boeing 737-800",
+            "Boeing 787-9",
+            "Boeing 787-10"
+        ],
+        LAN: [
+            "Airbus A319-100",
+            "Airbus A320-200",
+            "Airbus A320neo",
+            "Airbus A321-200",
+            "Airbus A321neo",
+            "Airbus A321-XLR",
+            "Boeing 767-300ER",
+            "Boeing 777-300ER",
+            "Boeing 787-8",
+            "Boeing 787-9",
+            "Embraer E195-E2"
+        ],
     SVA: [
         "Airbus A320-200",
         "Airbus A321-200",
@@ -606,6 +651,24 @@ export const AirlineAircraftPhotoFiles = {
         "Boeing 787-9": "CCA 787-9.jpg",
         "Comac C909": "CCA C909.avif",
         "Comac C919-100ER": "CCA C919.jpg"
+    },
+    CES: {
+        "Airbus A319-100": "CES A319-100.jpg",
+        "Airbus A320-200": "CES A320-200.jpg",
+        "Airbus A320neo": "CES A320-neo.webp",
+        "Airbus A321-200": "CES A321-200.jpg",
+        "Airbus A321neo": "CES A321-neo.jpeg",
+        "Airbus A330-200": "CES A330-200.jpg",
+        "Airbus A330-300": "CES A330-300.webp",
+        "Airbus A330neo": "CES A330-neo.webp",
+        "Airbus A350-900": "CES A350-900.jpg",
+        "Boeing 737-700": "CES 737-700.jpg",
+        "Boeing 737-800": "CES 737-800.jpg",
+        "Boeing 737 MAX 8": "CES 737 MAX 8.jpg",
+        "Boeing 777-300ER": "CES 777-300ER.jpg",
+        "Boeing 787-9": "CES 787-9.jpg",
+        "Comac C909": "CES C909.jpg",
+        "Comac C919-100STD": "CES C919.jpg"
     },
     CPA: {
         "Airbus A321neo": "CPA A321-neo.avif",
@@ -854,6 +917,30 @@ export const AirlineAircraftPhotoFiles = {
         "Boeing 787-8": "QTR 787-8.jpg",
         "Boeing 787-9": "QTR 787-9.jpg",
         "Boeing 787-10": "QTR 787-10.jpg"
+    },
+    QFA: {
+        "Airbus A321-XLR": "QFA A321XLR.jpg",
+        "Airbus A330-200": "QFA A330-200.webp",
+        "Airbus A330-300": "QFA A330-300.jpeg",
+        "Airbus A350-1000": "QFA A350-1000.png",
+        "Airbus A350-1000ULR": "QFA A350-1000LR.jpeg",
+        "Airbus A380-800": "QFA A380-800.jpg",
+        "Boeing 737-800": "QFA 737-800.jpeg",
+        "Boeing 787-9": "QFA 787-9.jpg",
+        "Boeing 787-10": "QFA 787-10.jpg"
+    },
+    LAN: {
+        "Airbus A319-100": "LAN A319-100.avif",
+        "Airbus A320-200": "LAN A320-200.jpg",
+        "Airbus A320neo": "LAN A320-neo.avif",
+        "Airbus A321-200": "LAN A321-200.webp",
+        "Airbus A321neo": "LAN A321-neo.avif",
+        "Airbus A321-XLR": "LAN A321-xlr.avif",
+        "Boeing 767-300ER": "LAN 767-300ER.jpeg",
+        "Boeing 777-300ER": "LAN 777-300ER.jpg",
+        "Boeing 787-8": "LAN 787-8.jpg",
+        "Boeing 787-9": "LAN 787-9.jpg",
+        "Embraer E195-E2": "LAN 195 E2.jpg"
     },
     SVA: {
         "Airbus A320-200": "SVA A320-200.jpg",
