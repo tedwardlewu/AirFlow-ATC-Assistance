@@ -452,6 +452,25 @@ export const AirlineAircraftAssignments = {
             "Boeing 787-9",
             "Embraer E195-E2"
         ],
+        AVA: [
+            "Airbus A319-100",
+            "Airbus A320-200",
+            "Airbus A320neo",
+            "Airbus A330-900neo",
+            "Boeing 787-8"
+        ],
+        SAA: [
+            "Airbus A319-100",
+            "Airbus A320-200",
+            "Airbus A330-200",
+            "Airbus A340-200",
+            "Airbus A340-600",
+            "Airbus A350-900",
+            "Boeing 737-200",
+            "Boeing 737-300",
+            "Boeing 737-800",
+            "Boeing 747-400",
+        ],
     SVA: [
         "Airbus A320-200",
         "Airbus A321-200",
@@ -941,6 +960,25 @@ export const AirlineAircraftPhotoFiles = {
         "Boeing 787-8": "LAN 787-8.jpg",
         "Boeing 787-9": "LAN 787-9.jpg",
         "Embraer E195-E2": "LAN 195 E2.jpg"
+    },
+    AVA: {
+        "Airbus A319-100": "AVA A319-100.jpg",
+        "Airbus A320-200": "AVA a320-200.jpg",
+        "Airbus A320neo": "AVA A320-NEO.webp",
+        "Airbus A330-900neo": "AVA A330-900.jpg",
+        "Boeing 787-8": "AVA 787-8.jpg"
+    },
+    SAA: {
+        "Airbus A319-100": "SAA A319-100.jpg",
+        "Airbus A320-200": "SAA A320-200.jpg",
+        "Airbus A330-200": "SAA A330-200.jpg",
+        "Airbus A340-200": "SAA A340-200.jpg",
+        "Airbus A340-600": "SAA A340-600.jpg",
+        "Airbus A350-900": "SAA A350-900.jpeg",
+        "Boeing 737-200": "SAA 737-200F.jpg",
+        "Boeing 737-300": "SAA 737-300F.jpg",
+        "Boeing 737-800": "SAA 737-800.jpg",
+        "Boeing 747-400": "SAA 747-400.jpg"
     },
     SVA: {
         "Airbus A320-200": "SVA A320-200.jpg",
