@@ -272,13 +272,13 @@ export const AirlineAircraftAssignments = {
         "Boeing 737-900",
         "Boeing 737 MAX 8",
         "Boeing 737 MAX 9",
+        "Boeing 787-9",
         "Embraer E175"
     ],
     HAL: [
         "Airbus A321neo",
         "Airbus A330-200",
-        "Boeing 717-200",
-        "Boeing 787-9"
+        "Boeing 717-200"
     ],
     JAL: [
         "Airbus A321neo",
@@ -470,6 +470,19 @@ export const AirlineAircraftAssignments = {
             "Boeing 737-300",
             "Boeing 737-800",
             "Boeing 747-400",
+        ],
+        THA: [
+            "Airbus A320-200",
+            "Airbus A321neo",
+            "Airbus A330-300",
+            "Airbus A340-500",
+            "Airbus A340-600",
+            "Airbus A350-900",
+            "Boeing 777-200ER",
+            "Boeing 777-300ER",
+            "Boeing 787-8",
+            "Boeing 787-9",
+            "Boeing 787-10"
         ],
     SVA: [
         "Airbus A320-200",
@@ -784,13 +797,13 @@ export const AirlineAircraftPhotoFiles = {
         "Boeing 737-900": "AL 737 900.jpg",
         "Boeing 737 MAX 8": "AL 737 MAX 8.jpg",
         "Boeing 737 MAX 9": "AL 737 MAX 9.webp",
+        "Boeing 787-9": "AL 787-9.jpg",
         "Embraer E175": "AL E175.jpg"
     },
     HAL: {
-        "Airbus A321neo": "AL A321 NEO.webp",
+        "Airbus A321neo": ["AL A321 NEO.webp", "HA A321-neo.jpg"],
         "Airbus A330-200": "AL A330-200.avif",
-        "Boeing 717-200": "AL 717 200.jpg",
-        "Boeing 787-9": "AL 787-9.jpg"
+        "Boeing 717-200": "AL 717 200.jpg"
     },
     JAL: {
         "Airbus A321neo": "JAL A321-neo.jpg",
@@ -979,6 +992,19 @@ export const AirlineAircraftPhotoFiles = {
         "Boeing 737-300": "SAA 737-300F.jpg",
         "Boeing 737-800": "SAA 737-800.jpg",
         "Boeing 747-400": "SAA 747-400.jpg"
+    },
+    THA: {
+        "Airbus A320-200": "THA A320-200.jpg",
+        "Airbus A321neo": "THA A321-NEO.jpg",
+        "Airbus A330-300": "THA A330-300.jpg",
+        "Airbus A340-500": "THA A340-500.avif",
+        "Airbus A340-600": "THA A340-600.jpg",
+        "Airbus A350-900": "THA A350-900.jpeg",
+        "Boeing 777-200ER": "THA 777-200ER.jpg",
+        "Boeing 777-300ER": "THA 777-300ER.jpeg",
+        "Boeing 787-8": "THA 787-8.jpg",
+        "Boeing 787-9": "THA 787-9.jpg",
+        "Boeing 787-10": "THA 787-10.avif"
     },
     SVA: {
         "Airbus A320-200": "SVA A320-200.jpg",

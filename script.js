@@ -3380,7 +3380,11 @@ function setupMap() {
         }
 
         function getAircraftPhoto(plane) {
-            const photoSource = AirlineAircraftPhotoFiles[plane.airlineCode]?.[plane.aircraftModel] ?? null;
+            const configuredPhotoSource = AirlineAircraftPhotoFiles[plane.airlineCode]?.[plane.aircraftModel] ?? null;
+
+            const photoSource = Array.isArray(configuredPhotoSource)
+                ? (plane.selectedAircraftPhotoSource ??= configuredPhotoSource[Math.floor(Math.random() * configuredPhotoSource.length)] ?? null)
+                : configuredPhotoSource;
 
             if (!photoSource) {
                 return null;
