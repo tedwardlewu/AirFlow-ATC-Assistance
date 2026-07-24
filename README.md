@@ -11,8 +11,6 @@ Airflow ATC is a Vite-powered Leaflet map focused on ATC Assistance with Montrea
 - Animated plane markers moving along taxiway geometry
 - Interactive per-plane controls for runway assignment, speed changes, and aborting takeoff
 - Scrollable left-side aircraft control rail with flight-number search
-- Expanded live fleet with deterministic Airbus and Boeing model assignment
-- Dark dashboard layout with a full-width map hero
 
 ## Project Structure
 
@@ -61,3 +59,4 @@ Both surfaces expose the same live controls for runway assignment, speed adjustm
 - Styling and classification are intentionally customized for readability rather than strict aeronautical chart compliance.
 - Plane marker size and line weights are zoom-sensitive and can be adjusted in `Script.js`.
 - The commercial aircraft catalog can be expanded or reordered in `AircraftCatalog.js` without modifying the main animation code.
+- Automated rerouting is still very buggy, taking me quite some time to work on it outside of work 💔
