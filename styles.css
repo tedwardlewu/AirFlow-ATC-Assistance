@@ -394,6 +394,31 @@ body::after {
     color: var(--muted);
 }
 
+.plane-side-panel-subsection {
+    display: grid;
+    gap: 8px;
+    min-height: 0;
+}
+
+.plane-side-panel-view-hidden {
+    display: none;
+}
+
+.plane-side-panel-subsection-header {
+    display: grid;
+    gap: 4px;
+}
+
+.plane-side-panel-subsection-header small {
+    color: var(--muted);
+    font-size: 0.7rem;
+    line-height: 1.35;
+}
+
+.plane-side-panel-subsection-header-compact {
+    gap: 2px;
+}
+
 .plane-side-panel-spawn-button {
     width: 100%;
     padding: 9px 12px;
@@ -492,7 +517,18 @@ body::after {
 
 .plane-side-panel-list {
     display: grid;
+    flex: 1 1 auto;
     gap: 10px;
+    min-height: 0;
+    overflow-y: auto;
+    padding-right: 4px;
+}
+
+.plane-command-queue {
+    display: grid;
+    flex: 1 1 auto;
+    gap: 8px;
+    min-height: 0;
     overflow-y: auto;
     padding-right: 4px;
 }
@@ -599,13 +635,80 @@ body::after {
     font-size: 0.78rem;
 }
 
-.plane-side-panel-list::-webkit-scrollbar {
+.plane-side-panel-list::-webkit-scrollbar,
+.plane-command-queue::-webkit-scrollbar {
     width: 8px;
 }
 
-.plane-side-panel-list::-webkit-scrollbar-thumb {
+.plane-side-panel-list::-webkit-scrollbar-thumb,
+.plane-command-queue::-webkit-scrollbar-thumb {
     background: rgba(255, 255, 255, 0.14);
     border-radius: 999px;
+}
+
+.plane-command-card {
+    padding: 12px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.028));
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.plane-command-card.assignment {
+    border-color: rgba(255, 148, 95, 0.34);
+    background: linear-gradient(180deg, rgba(255, 148, 95, 0.12), rgba(255, 255, 255, 0.03));
+}
+
+.plane-command-card.departure {
+    border-color: rgba(119, 183, 234, 0.3);
+}
+
+.plane-command-card.arrival {
+    border-color: rgba(108, 255, 157, 0.3);
+    background: linear-gradient(180deg, rgba(108, 255, 157, 0.1), rgba(255, 255, 255, 0.028));
+}
+
+.plane-command-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+}
+
+.plane-command-card-head strong,
+.plane-command-card small {
+    display: block;
+}
+
+.plane-command-card small {
+    color: var(--muted);
+}
+
+.plane-command-type {
+    display: inline-flex;
+    align-items: center;
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-dark);
+    font-size: 0.64rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.plane-command-summary {
+    margin: 7px 0 8px;
+    font-size: 0.7rem;
+    line-height: 1.35;
+    color: rgba(237, 242, 247, 0.82);
+}
+
+.plane-card-linked {
+    border-color: rgba(119, 183, 234, 0.42);
+    box-shadow: 0 0 0 1px rgba(119, 183, 234, 0.14), 0 10px 20px rgba(0, 0, 0, 0.2);
+    background: rgba(119, 183, 234, 0.08);
 }
 
 .plane-control-card {

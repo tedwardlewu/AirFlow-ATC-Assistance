@@ -48,6 +48,8 @@ export function createPlaneDepartureOperations(dependencies) {
         plane.progress = 0;
         plane.hasAssignedRunway = false;
         plane.returningToGate = false;
+        plane.taxiRequestPending = false;
+        plane.taxiRequestIssuedAt = null;
         plane.departureClearance = "hold-short";
         plane.operationType = "departure";
         plane.arrivalRolloutEnd = 0;
@@ -79,6 +81,8 @@ export function createPlaneDepartureOperations(dependencies) {
         plane.progress = Math.min(Math.max(nextProgress, 0), 0.999);
         plane.hasAssignedRunway = true;
         plane.returningToGate = false;
+        plane.taxiRequestPending = false;
+        plane.taxiRequestIssuedAt = null;
         plane.goAroundCutoffProgress = 0;
         plane.goAroundUsed = false;
         plane.goAroundEndProgress = 0;
@@ -120,6 +124,8 @@ export function createPlaneDepartureOperations(dependencies) {
         plane.progress = 0;
         plane.returningToGate = true;
         plane.hasAssignedRunway = true;
+        plane.taxiRequestPending = false;
+        plane.taxiRequestIssuedAt = null;
         plane.departureClearance = "hold-short";
 
         const position = interpolateRouteProfile(plane.routeProfile, plane.progress);

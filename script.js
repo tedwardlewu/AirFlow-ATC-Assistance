@@ -296,6 +296,7 @@ const maximumStartupAssignmentsByAirlineCode = Object.fromEntries(
 const maximumStartupPlaneCount = Object.values(maximumStartupAssignmentsByAirlineCode)
     .reduce((totalPlanes, maximumPlanes) => totalPlanes + maximumPlanes, 0);
 const arrivalSpawnIntervalMs = 60000;
+const departureTaxiRequestIntervalMs = 60000;
 const arrivalSpawnDistanceMeters = 15000;
 const departureClimbOutDistanceMeters = 15000;
 const arrivalApproachLineColor = "#6cff9d";
@@ -3248,13 +3249,31 @@ function setupMap() {
             ...runwayLineSets.map((entry) => entry.linePoints)
         ]);
         const runwayChoices = [...new Set(runwayLineSets.map((entry) => entry.name).filter(Boolean))];
+        const planeCommandQueuePanel = document.getElementById("plane-command-queue-panel");
+        const planeControlBoardPanel = document.getElementById("plane-control-board-panel");
+        const planePanelViewButtons = Array.from(document.querySelectorAll("[data-panel-view]"));
+        const planeCommandQueueCount = document.getElementById("plane-command-queue-count");
+        const planeControlListCount = document.getElementById("plane-control-list-count");
+        const planeCommandQueue = document.getElementById("plane-command-queue");
         const planeControlList = document.getElementById("plane-control-list");
         const planeSearchInput = document.getElementById("plane-search-input");
         const manualArrivalSpawnButton = document.getElementById("manual-arrival-spawn");
+        let activePlanePanelView = "queue";
+        let lastPlaneCommandQueueMarkup = "";
+        let lastPlaneCommandQueueRenderAt = 0;
         let lastPlaneControlPanelMarkup = "";
         let lastPlaneControlPanelRenderAt = 0;
         let planeSearchQuery = "";
         const planeControlPanelRefreshMs = 450;
+
+        function setActivePlanePanelView(viewName) {
+            activePlanePanelView = viewName === "board" ? "board" : "queue";
+            planeCommandQueuePanel?.classList.toggle("plane-side-panel-view-hidden", activePlanePanelView !== "queue");
+            planeControlBoardPanel?.classList.toggle("plane-side-panel-view-hidden", activePlanePanelView !== "board");
+            planePanelViewButtons.forEach((button) => {
+                button.classList.toggle("active", button.getAttribute("data-panel-view") === activePlanePanelView);
+            });
+        }
 
         function canPlaneReceiveDepartureClearance(plane) {
             return plane.operationType !== "arrival"
@@ -3350,7 +3369,9 @@ function setupMap() {
                         "immediate": "Line up and depart without stopping on the runway."
                     }[departureClearance]
                     : !isArrival
-                        ? "Assign a runway first, then issue hold short, line up, or immediate takeoff."
+                        ? plane.taxiRequestPending
+                            ? "Requesting taxi to runway. Assign a runway to begin pushback and taxi."
+                            : "Parked at gate and awaiting a taxi request."
                     : "Click a runway to start pushback and taxi."
             };
         }
@@ -3424,17 +3445,169 @@ function setupMap() {
             `;
         }
 
+        function createRunwaySelectorMarkup(runwayButtons) {
+            return runwayButtons
+                ? `
+                    <div class="plane-runway-selector">
+                        ${runwayButtons}
+                    </div>
+                `
+                : "";
+        }
+
+        function getPlaneCommandQueueEntry(plane) {
+            const isArrival = plane.operationType === "arrival" && plane.returningToGate;
+            const controls = createPlaneActionMarkup(plane);
+            const departureClearance = getPlaneDepartureClearance(plane);
+            const atHoldShort = plane.progress >= plane.holdProgress && plane.progress < plane.runwayStart;
+            const onRunway = plane.progress >= plane.runwayStart && plane.progress < 0.995;
+            const speedControlMarkup = `${controls.speedControls}<small>Speed control ${controls.speedPercent}%</small>`;
+
+            if (isArrival) {
+                if (!canPlaneGoAround(plane)) {
+                    return null;
+                }
+
+                return {
+                    plane,
+                    priority: 360,
+                    categoryClass: "arrival",
+                    queueLabel: "Arrival Decision",
+                    statusLabel: plane.progress < (plane.runwayStart ?? 0) ? "On approach" : "Landing roll",
+                    detail: controls.hint,
+                    landingStatus: controls.landingStatus,
+                    actionMarkup: `${controls.goAroundAction}${speedControlMarkup}`
+                };
+            }
+
+            if (plane.returningToGate) {
+                return null;
+            }
+
+            if (!plane.hasAssignedRunway) {
+                if (!plane.taxiRequestPending) {
+                    return null;
+                }
+
+                return null;
+            }
+
+            if (onRunway && departureClearance !== "immediate") {
+                return {
+                    statusLabel: "Requesting taxi",
+                    detail: `${plane.callsign} is requesting taxi to ${plane.runwayName ?? "an assigned runway"}. Assign a runway to begin pushback and taxi.`,
+                    categoryClass: "departure",
+                    queueLabel: "Takeoff Release",
+                    statusLabel: `On ${plane.runwayName}`,
+                    detail: `${plane.callsign} is on the runway awaiting departure release.`,
+                    actionMarkup: `${controls.clearanceControls}${speedControlMarkup}${controls.abortAction}`
+                };
+            }
+
+            if (departureClearance === "hold-short") {
+                return {
+                    plane,
+                    priority: atHoldShort ? 460 : 340,
+                    categoryClass: "departure",
+                    queueLabel: atHoldShort ? "Hold Short" : "Departure Sequencing",
+                    statusLabel: atHoldShort ? `Holding ${plane.runwayName}` : `Taxi ${plane.runwayName}`,
+                    detail: atHoldShort
+                        ? `${plane.callsign} is holding short and ready for line-up or immediate departure clearance.`
+                        : `${plane.callsign} is taxiing toward ${plane.runwayName} and can be pre-cleared.`,
+                    actionMarkup: `${controls.clearanceControls}${speedControlMarkup}`
+                };
+            }
+
+            if (departureClearance === "line-up") {
+                return {
+                    plane,
+                    priority: atHoldShort ? 430 : 320,
+                    categoryClass: "departure",
+                    queueLabel: atHoldShort ? "Line Up" : "Taxi To Line Up",
+                    statusLabel: atHoldShort ? `Ready ${plane.runwayName}` : `Proceed ${plane.runwayName}`,
+                    detail: atHoldShort
+                        ? `${plane.callsign} is cleared to line up and will stop on the runway.`
+                        : `${plane.callsign} is taxiing with line-up clearance already issued.`,
+                    actionMarkup: `${controls.clearanceControls}${speedControlMarkup}${controls.abortAction}`
+                };
+            }
+
+            return null;
+        }
+
+        function createPlaneCommandQueueCardContent(entry) {
+            const { plane, queueLabel, statusLabel, detail, actionMarkup, categoryClass, landingStatus = "" } = entry;
+            const airlineBadge = createAirlineBadgeMarkup(plane);
+            const aircraftPhotoMarkup = createAircraftPhotoMarkup(plane);
+            const telemetry = getPlaneTelemetry(plane);
+
+            return `
+                <article class="plane-command-card ${categoryClass}" data-plane="${plane.callsign}">
+                    <div class="plane-command-card-head">
+                        <div>
+                            <span class="status-label">${queueLabel}</span>
+                            <strong>${plane.callsign}</strong>
+                        </div>
+                        <span class="plane-command-type">${statusLabel}</span>
+                    </div>
+                    <div class="plane-airline-row">
+                        ${airlineBadge}
+                        <div class="plane-airline-meta">
+                            <small>${plane.airlineName}</small>
+                            <small>${plane.aircraftModel}</small>
+                        </div>
+                    </div>
+                    <small>Gate ${plane.gate} · ${plane.parkingName}</small>
+                    <small>${telemetry.speedLabel} · Altitude ${telemetry.altitudeLabel}</small>
+                    ${landingStatus}
+                    <p class="plane-command-summary">${detail}</p>
+                    ${actionMarkup}
+                    ${aircraftPhotoMarkup}
+                </article>
+            `;
+        }
+
+        function renderPlaneCommandQueue(planes, options = {}) {
+            if (!planeCommandQueue) {
+                return;
+            }
+
+            const forceRender = options.force ?? true;
+            const renderTimestamp = options.timestamp ?? performance.now();
+
+            if (!forceRender && (renderTimestamp - lastPlaneCommandQueueRenderAt) < planeControlPanelRefreshMs) {
+                return;
+            }
+
+            const queuedEntries = planes
+                .map((plane) => getPlaneCommandQueueEntry(plane))
+                .filter(Boolean)
+                .sort((left, right) => right.priority - left.priority || left.plane.callsign.localeCompare(right.plane.callsign));
+
+            if (planeCommandQueueCount) {
+                planeCommandQueueCount.textContent = String(queuedEntries.length);
+            }
+
+            const nextMarkup = queuedEntries.length
+                ? queuedEntries.map((entry) => createPlaneCommandQueueCardContent(entry)).join("")
+                : '<div class="plane-control-section-empty">No pending ATC commands right now.</div>';
+
+            if (nextMarkup === lastPlaneCommandQueueMarkup) {
+                return;
+            }
+
+            const previousScrollTop = planeCommandQueue.scrollTop;
+            lastPlaneCommandQueueRenderAt = renderTimestamp;
+            lastPlaneCommandQueueMarkup = nextMarkup;
+            planeCommandQueue.innerHTML = nextMarkup;
+            planeCommandQueue.scrollTop = previousScrollTop;
+        }
+
         function createPlaneControlPopupContent(plane) {
             const controls = createPlaneActionMarkup(plane);
             const airlineBadge = createAirlineBadgeMarkup(plane);
             const telemetry = getPlaneTelemetry(plane);
-            const runwaySelectorMarkup = controls.runwayButtons
-                ? `
-                    <div class="plane-runway-selector">
-                        ${controls.runwayButtons}
-                    </div>
-                `
-                : "";
+            const runwaySelectorMarkup = createRunwaySelectorMarkup(controls.runwayButtons);
 
             return `
                 <div class="plane-control-popup" data-plane="${plane.callsign}">
@@ -3465,13 +3638,7 @@ function setupMap() {
             const airlineBadge = createAirlineBadgeMarkup(plane);
             const aircraftPhotoMarkup = createAircraftPhotoMarkup(plane);
             const telemetry = getPlaneTelemetry(plane);
-            const runwaySelectorMarkup = controls.runwayButtons
-                ? `
-                    <div class="plane-runway-selector">
-                        ${controls.runwayButtons}
-                    </div>
-                `
-                : "";
+            const runwaySelectorMarkup = createRunwaySelectorMarkup(controls.runwayButtons);
             const statusLabel = plane.operationType === "arrival" && plane.returningToGate
                 ? plane.progress < (plane.arrivalRolloutEnd ?? 0)
                     ? `Landing ${plane.arrivalRunwayName ?? "Inbound"}`
@@ -3480,7 +3647,9 @@ function setupMap() {
                 ? "Returning to stand"
                 : plane.hasAssignedRunway
                     ? (plane.progress >= plane.runwayStart ? "On runway" : `Assigned ${plane.runwayName}`)
-                    : "Awaiting runway";
+                    : plane.taxiRequestPending
+                        ? "Requesting taxi"
+                        : "At gate";
 
             return `
                 <article class="plane-control-card" data-plane="${plane.callsign}">
@@ -3529,6 +3698,9 @@ function setupMap() {
             const visiblePlanes = normalizedQuery
                 ? planes.filter((plane) => plane.callsign.includes(normalizedQuery))
                 : planes;
+            if (planeControlListCount) {
+                planeControlListCount.textContent = String(visiblePlanes.length);
+            }
             const inboundPlanes = visiblePlanes.filter((plane) => plane.operationType === "arrival" && plane.returningToGate);
             const takeoffBoundPlanes = visiblePlanes.filter((plane) => {
                 return plane.operationType !== "arrival"
@@ -3611,6 +3783,36 @@ function setupMap() {
             if (Number.isFinite(delta) && delta !== 0) {
                 adjustPlaneSpeed(plane, delta);
             }
+        }
+
+        function canPlaneRequestTaxi(plane) {
+            return plane.operationType !== "arrival"
+                && !plane.returningToGate
+                && !plane.hasAssignedRunway;
+        }
+
+        function requestDepartureTaxiToRunway(plane) {
+            if (!canPlaneRequestTaxi(plane)) {
+                return false;
+            }
+
+            plane.taxiRequestPending = true;
+            plane.taxiRequestIssuedAt = Date.now();
+            updatePlanePopup(plane, true);
+            return true;
+        }
+
+        function requestRandomIdleDepartureTaxi() {
+            const eligiblePlanes = animatedPlanes.filter((plane) => {
+                return canPlaneRequestTaxi(plane) && !plane.taxiRequestPending;
+            });
+
+            if (!eligiblePlanes.length) {
+                return;
+            }
+
+            const selectedPlane = eligiblePlanes[Math.floor(Math.random() * eligiblePlanes.length)];
+            requestDepartureTaxiToRunway(selectedPlane);
         }
 
         function bindPlanePopupActions(plane, popupElement) {
@@ -3727,6 +3929,7 @@ function setupMap() {
             refreshPlanePopupContent(plane, keepOpen);
 
             if (plane.allPlanes) {
+                renderPlaneCommandQueue(plane.allPlanes);
                 renderPlaneControlPanel(plane.allPlanes);
             }
         }
@@ -3998,6 +4201,8 @@ function setupMap() {
                 approachGuideLine: null,
                 holdDelayMs: 350 + (index * 40),
                 holdStartedAt: null,
+                taxiRequestPending: false,
+                taxiRequestIssuedAt: null,
                 progress: initialProgress,
                 direction: initialDirection,
                 hasAssignedRunway: isArrival,
@@ -4089,7 +4294,7 @@ function setupMap() {
             maximumAssignmentsByAirlineCode: maximumStartupAssignmentsByAirlineCode
         });
 
-        if (planeControlList) {
+        if (planeControlList || planeCommandQueue) {
             let hoveredPlane = null;
             let hoveredPlaneCard = null;
 
@@ -4098,7 +4303,7 @@ function setupMap() {
                     return;
                 }
 
-                hoveredPlaneCard?.classList.remove("plane-control-card-linked");
+                hoveredPlaneCard?.classList.remove("plane-card-linked");
                 hoveredPlane.marker.getElement()?.classList.remove("plane-marker-linked");
                 hoveredPlane.marker.setZIndexOffset(6000);
                 hoveredPlane.marker.closePopup();
@@ -4114,74 +4319,97 @@ function setupMap() {
                 clearHoveredPlaneIndicator();
                 hoveredPlane = plane;
                 hoveredPlaneCard = card;
-                card.classList.add("plane-control-card-linked");
+                card.classList.add("plane-card-linked");
                 plane.marker.getElement()?.classList.add("plane-marker-linked");
                 plane.marker.setZIndexOffset(8500);
                 map.closePopup();
                 plane.marker.openPopup();
             }
 
-            planeControlList.addEventListener("mouseover", (event) => {
-                if (!(event.target instanceof Element)) {
+            function bindPlaneListInteractions(listElement) {
+                if (!listElement) {
                     return;
                 }
 
-                const card = event.target.closest("[data-plane]");
+                listElement.addEventListener("mouseover", (event) => {
+                    if (!(event.target instanceof Element)) {
+                        return;
+                    }
 
-                if (!card || !(card instanceof HTMLElement)) {
-                    return;
-                }
+                    const card = event.target.closest("[data-plane]");
 
-                if (event.relatedTarget instanceof Node && card.contains(event.relatedTarget)) {
-                    return;
-                }
+                    if (!card || !(card instanceof HTMLElement)) {
+                        return;
+                    }
 
-                const plane = planeByCallsign.get(card.getAttribute("data-plane"));
+                    if (event.relatedTarget instanceof Node && card.contains(event.relatedTarget)) {
+                        return;
+                    }
 
-                if (plane) {
-                    highlightPlaneFromCard(plane, card);
-                }
-            });
+                    const plane = planeByCallsign.get(card.getAttribute("data-plane"));
 
-            planeControlList.addEventListener("mouseout", (event) => {
-                if (!(event.target instanceof Element)) {
-                    return;
-                }
+                    if (plane) {
+                        highlightPlaneFromCard(plane, card);
+                    }
+                });
 
-                const card = event.target.closest("[data-plane]");
+                listElement.addEventListener("mouseout", (event) => {
+                    if (!(event.target instanceof Element)) {
+                        return;
+                    }
 
-                if (!card) {
-                    return;
-                }
+                    const card = event.target.closest("[data-plane]");
 
-                if (event.relatedTarget instanceof Node && card.contains(event.relatedTarget)) {
-                    return;
-                }
+                    if (!card) {
+                        return;
+                    }
 
-                if (hoveredPlaneCard === card) {
-                    clearHoveredPlaneIndicator();
-                }
-            });
+                    if (event.relatedTarget instanceof Node && card.contains(event.relatedTarget)) {
+                        return;
+                    }
 
-            planeControlList.addEventListener("click", (event) => {
-                const button = event.target instanceof Element
-                    ? event.target.closest("button")
-                    : null;
-                const card = event.target instanceof Element
-                    ? event.target.closest("[data-plane]")
-                    : null;
+                    if (hoveredPlaneCard === card) {
+                        clearHoveredPlaneIndicator();
+                    }
+                });
 
-                if (!button || !card) {
-                    return;
-                }
+                listElement.addEventListener("click", (event) => {
+                    const card = event.target instanceof Element
+                        ? event.target.closest("[data-plane]")
+                        : null;
 
-                const plane = planeByCallsign.get(card.getAttribute("data-plane"));
+                    if (!card) {
+                        return;
+                    }
 
-                if (!plane) {
-                    return;
-                }
+                    const plane = planeByCallsign.get(card.getAttribute("data-plane"));
 
-                handlePlaneControlAction(plane, button);
+                    if (!plane) {
+                        return;
+                    }
+
+                    const button = event.target instanceof Element
+                        ? event.target.closest("button")
+                        : null;
+
+                    if (!button) {
+                        highlightPlaneFromCard(plane, card);
+                        return;
+                    }
+
+                    handlePlaneControlAction(plane, button);
+                });
+            }
+
+            bindPlaneListInteractions(planeCommandQueue);
+            bindPlaneListInteractions(planeControlList);
+        }
+
+        if (planePanelViewButtons.length) {
+            planePanelViewButtons.forEach((button) => {
+                button.addEventListener("click", () => {
+                    setActivePlanePanelView(button.getAttribute("data-panel-view"));
+                });
             });
         }
 
@@ -4196,6 +4424,8 @@ function setupMap() {
         animatedPlanes.forEach((plane) => {
             plane.allPlanes = animatedPlanes;
         });
+        setActivePlanePanelView(activePlanePanelView);
+        renderPlaneCommandQueue(animatedPlanes);
         renderPlaneControlPanel(animatedPlanes);
 
         if (manualArrivalSpawnButton) {
@@ -4208,6 +4438,8 @@ function setupMap() {
             spawnArrivalPlane();
             window.setInterval(spawnArrivalPlane, arrivalSpawnIntervalMs);
         }, arrivalSpawnIntervalMs);
+
+        window.setInterval(requestRandomIdleDepartureTaxi, departureTaxiRequestIntervalMs);
 
         if (animatedPlanes.length) {
             const refreshPlaneIcons = () => {
@@ -4419,6 +4651,7 @@ function setupMap() {
                     }
                 });
 
+                renderPlaneCommandQueue(animatedPlanes, { force: false, timestamp });
                 renderPlaneControlPanel(animatedPlanes, { force: false, timestamp });
 
                 window.requestAnimationFrame(tick);

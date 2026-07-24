@@ -51,17 +51,40 @@
                     <aside class="plane-side-panel" aria-label="Plane controls">
                         <div class="plane-side-panel-header">
                             <span class="callout-label">Plane Controls</span>
-                            <strong>All Active Aircraft</strong>
-                            <small>Runway, speed, and abort actions for each plane.</small>
+                            <strong>Controller Workspace</strong>
+                            <small>Switch between the original aircraft board and the ATC command queue.</small>
                         </div>
-                        <button type="button" class="plane-side-panel-spawn-button" id="manual-arrival-spawn">
-                            Spawn inbound aircraft
-                        </button>
-                        <label class="plane-search-field" for="plane-search-input">
-                            <span class="status-label">Search Flight</span>
-                            <input id="plane-search-input" type="search" placeholder="Search flight number" autocomplete="off">
-                        </label>
-                        <div class="plane-side-panel-list" id="plane-control-list"></div>
+                        <div class="plane-side-panel-nav" aria-label="Control panel views">
+                            <button type="button" class="plane-side-panel-nav-button active" data-panel-view="queue">
+                                ATC Queue
+                                <span id="plane-command-queue-count">0</span>
+                            </button>
+                            <button type="button" class="plane-side-panel-nav-button" data-panel-view="board">
+                                All Aircraft
+                                <span id="plane-control-list-count">0</span>
+                            </button>
+                        </div>
+                        <section class="plane-side-panel-subsection" id="plane-command-queue-panel" aria-label="ATC command queue">
+                            <div class="plane-side-panel-subsection-header">
+                                <span class="status-label">Pending Commands</span>
+                                <small>Flights that currently need a departure or go-around decision.</small>
+                            </div>
+                            <div class="plane-command-queue" id="plane-command-queue"></div>
+                        </section>
+                        <section class="plane-side-panel-subsection plane-side-panel-view-hidden" id="plane-control-board-panel" aria-label="All aircraft board">
+                            <button type="button" class="plane-side-panel-spawn-button" id="manual-arrival-spawn">
+                                Spawn inbound aircraft
+                            </button>
+                            <label class="plane-search-field" for="plane-search-input">
+                                <span class="status-label">Search Flight</span>
+                                <input id="plane-search-input" type="search" placeholder="Search flight number" autocomplete="off">
+                            </label>
+                            <div class="plane-side-panel-subsection-header plane-side-panel-subsection-header-compact">
+                                <span class="status-label">Traffic Board</span>
+                                <small>Full aircraft list for monitoring and direct per-flight control.</small>
+                            </div>
+                            <div class="plane-side-panel-list" id="plane-control-list"></div>
+                        </section>
                     </aside>
 
                     <div class="map-callout weather">
