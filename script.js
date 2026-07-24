@@ -297,6 +297,7 @@ const maximumStartupPlaneCount = Object.values(maximumStartupAssignmentsByAirlin
     .reduce((totalPlanes, maximumPlanes) => totalPlanes + maximumPlanes, 0);
 const arrivalSpawnIntervalMs = 60000;
 const arrivalSpawnDistanceMeters = 15000;
+const departureClimbOutDistanceMeters = 15000;
 const arrivalApproachLineColor = "#6cff9d";
 const minimumArrivalRunwayExitProgress = 0.14;
 const preferredArrivalRunwayExitProgress = 0.24;
@@ -1300,13 +1301,12 @@ function buildRunwayDepartureRoute(runwayMatch) {
 
     const runwayEnd = chosenRoute.at(-1);
     const runwayPreEnd = chosenRoute.at(-2) ?? chosenRoute[0];
-    const exitPoint = [
-        runwayEnd[0] + ((runwayEnd[0] - runwayPreEnd[0]) * 0.45),
-        runwayEnd[1] + ((runwayEnd[1] - runwayPreEnd[1]) * 0.45)
-    ];
+    const departureHeading = getHeadingBetweenPoints(runwayPreEnd, runwayEnd);
+    const initialClimbPoint = projectPointByHeading(runwayEnd, departureHeading, departureClimbOutDistanceMeters * 0.28);
+    const departureExitPoint = projectPointByHeading(runwayEnd, departureHeading, departureClimbOutDistanceMeters);
 
     return {
-        route: dedupeRoutePoints([...chosenRoute, exitPoint]),
+        route: dedupeRoutePoints([...chosenRoute, initialClimbPoint, departureExitPoint]),
         runwayName: runwayMatch.entry.name ?? "Departure Runway"
     };
 }
@@ -2671,12 +2671,18 @@ function getQueueSpacingProgress(plane) {
 }
 
 function getSameRunwayQueueBlocker(plane, resolvedPositions) {
-    if (plane.progress >= plane.runwayStart) {
+    if (
+        plane.progress >= plane.runwayStart
+        || plane.operationType === "arrival"
+        || plane.returningToGate
+    ) {
         return null;
     }
 
     return resolvedPositions.find((entry) => {
         return entry.runwayName === plane.runwayName
+            && entry.operationType !== "arrival"
+            && !entry.returningToGate
             && entry.progress >= plane.progress
             && entry.progress < plane.runwayStart;
     }) ?? null;
@@ -4302,6 +4308,8 @@ function setupMap() {
                             position: goAroundPosition,
                             progress: plane.progress,
                             runwayName: plane.runwayName,
+                            operationType: plane.operationType,
+                            returningToGate: plane.returningToGate,
                             minimumSpacingSquared: getMinimumPlaneSpacingSquared(plane),
                             prediction: buildPlanePrediction(plane, plane.progress),
                             isOnRunway: isPlaneOnRunway(plane)
@@ -4323,6 +4331,8 @@ function setupMap() {
                             position: goAroundPosition,
                             progress: plane.progress,
                             runwayName: plane.runwayName,
+                            operationType: plane.operationType,
+                            returningToGate: plane.returningToGate,
                             minimumSpacingSquared: getMinimumPlaneSpacingSquared(plane),
                             prediction: buildPlanePrediction(plane, plane.progress),
                             isOnRunway: isPlaneOnRunway(plane)
@@ -4338,6 +4348,8 @@ function setupMap() {
                             position: goAroundPosition,
                             progress: plane.progress,
                             runwayName: plane.runwayName,
+                            operationType: plane.operationType,
+                            returningToGate: plane.returningToGate,
                             minimumSpacingSquared: getMinimumPlaneSpacingSquared(plane),
                             prediction: buildPlanePrediction(plane, plane.progress),
                             isOnRunway: isPlaneOnRunway(plane)
@@ -4362,6 +4374,8 @@ function setupMap() {
                             position: goAroundPosition,
                             progress: plane.progress,
                             runwayName: plane.runwayName,
+                            operationType: plane.operationType,
+                            returningToGate: plane.returningToGate,
                             minimumSpacingSquared: spacingResolution.minimumSpacingSquared,
                             prediction: buildPlanePrediction(plane, plane.progress),
                             isOnRunway: isPlaneOnRunway(plane)
@@ -4390,6 +4404,8 @@ function setupMap() {
                         position,
                         progress: plane.progress,
                         runwayName: plane.runwayName,
+                        operationType: plane.operationType,
+                        returningToGate: plane.returningToGate,
                         minimumSpacingSquared: spacingResolution.minimumSpacingSquared,
                         prediction: spacingResolution.prediction,
                         isOnRunway: isPlaneOnRunway(plane)
