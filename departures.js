@@ -27,6 +27,10 @@ export function createPlaneDepartureOperations(dependencies) {
             plane.progress = getRunwayHoldProgress(plane);
         }
 
+        if (clearance === "immediate" && plane.progress >= getRunwayHoldProgress(plane)) {
+            plane.progress = Math.min(Math.max(plane.progress, plane.runwayStart + 0.0005), 0.994);
+        }
+
         if (clearance !== "immediate" && plane.progress >= plane.runwayStart && plane.progress < 0.995) {
             plane.progress = plane.runwayStart;
         }

@@ -53,6 +53,16 @@
                             <span class="callout-label">Plane Controls</span>
                             <strong>Controller Workspace</strong>
                             <small>Switch between the original aircraft board and the ATC command queue.</small>
+                            <label class="plane-image-toggle" for="plane-image-toggle-input">
+                                <span class="plane-image-toggle-copy">
+                                    <span class="status-label">Aircraft Images</span>
+                                    <small>Show or hide aircraft photo panels.</small>
+                                </span>
+                                <span class="plane-image-toggle-switch">
+                                    <input id="plane-image-toggle-input" type="checkbox" checked>
+                                    <span class="plane-image-toggle-slider" aria-hidden="true"></span>
+                                </span>
+                            </label>
                         </div>
                         <div class="plane-side-panel-nav" aria-label="Control panel views">
                             <button type="button" class="plane-side-panel-nav-button active" data-panel-view="queue">
@@ -80,11 +90,19 @@
                                 <input id="plane-search-input" type="search" placeholder="Search flight number" autocomplete="off">
                             </label>
                             <div class="plane-side-panel-subsection-header plane-side-panel-subsection-header-compact">
-                                <span class="status-label">Traffic Board</span>
-                                <small>Full aircraft list for monitoring and direct per-flight control.</small>
+                                <div>
+                                    <span class="status-label">Traffic Board</span>
+                                    <small>Full aircraft list for monitoring and direct per-flight control.</small>
+                                </div>
+                                <button type="button" class="plane-board-columns-button" id="plane-board-columns-button" aria-label="Change aircraft board columns">
+                                    <span class="plane-board-columns-arrow" id="plane-board-columns-arrow" aria-hidden="true">→</span>
+                                </button>
                             </div>
                             <div class="plane-side-panel-list" id="plane-control-list"></div>
                         </section>
+                        <div class="plane-side-panel-resize-handle plane-side-panel-resize-handle-right" data-plane-panel-resize="right" aria-hidden="true"></div>
+                        <div class="plane-side-panel-resize-handle plane-side-panel-resize-handle-bottom" data-plane-panel-resize="bottom" aria-hidden="true"></div>
+                        <div class="plane-side-panel-resize-handle plane-side-panel-resize-handle-corner" data-plane-panel-resize="corner" aria-hidden="true"></div>
                     </aside>
 
                     <div class="map-callout weather">

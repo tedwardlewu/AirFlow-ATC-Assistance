@@ -288,7 +288,7 @@ body::after {
 }
 
 .map-legend {
-    max-width: min(640px, calc(100% - 350px));
+    max-width: min(640px, calc(100% - 620px));
     justify-content: flex-start;
 }
 
@@ -362,21 +362,34 @@ body::after {
 }
 
 .plane-side-panel {
+    --plane-board-columns: 1;
     position: absolute;
-    top: 110px;
+    top: 58px;
     left: 18px;
-    bottom: 18px;
-    width: min(320px, calc(100% - 36px));
+    bottom: auto;
+    width: min(var(--plane-panel-width, calc(220px + (var(--plane-board-columns) * 180px))), calc(100% - 36px));
+    height: min(var(--plane-panel-height, calc(100% - 76px)), calc(100% - 76px));
+    min-width: 320px;
+    min-height: 280px;
+    max-width: calc(100% - 36px);
+    max-height: calc(100% - 76px);
     z-index: 21;
     display: flex;
     flex-direction: column;
-    gap: 10px;
-    padding: 12px;
+    gap: 8px;
+    min-height: 0;
+    padding: 10px;
     border-radius: 14px;
     background: rgba(6, 10, 15, 0.95);
     border: 1px solid rgba(142, 162, 178, 0.16);
     box-shadow: 0 16px 28px rgba(0, 0, 0, 0.26);
     backdrop-filter: blur(10px);
+    overflow: hidden;
+}
+
+.plane-side-panel-header {
+    display: grid;
+    gap: 4px;
 }
 
 .plane-side-panel-header strong,
@@ -385,8 +398,9 @@ body::after {
 }
 
 .plane-side-panel-header strong {
-    margin: 2px 0 4px;
-    font-size: 1rem;
+    margin: 0;
+    font-size: 0.88rem;
+    line-height: 1.1;
 }
 
 .plane-side-panel-header small,
@@ -394,10 +408,88 @@ body::after {
     color: var(--muted);
 }
 
+.plane-side-panel-header > small {
+    font-size: 0.66rem;
+    line-height: 1.2;
+}
+
+.plane-image-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 5px 8px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.035);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.plane-image-toggle-copy {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.plane-image-toggle-copy small {
+    font-size: 0.56rem;
+    line-height: 1.1;
+}
+
+.plane-image-toggle-switch {
+    position: relative;
+    display: inline-flex;
+    flex: 0 0 auto;
+}
+
+.plane-image-toggle-switch input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+}
+
+.plane-image-toggle-slider {
+    position: relative;
+    width: 38px;
+    height: 22px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+    transition: background 140ms ease, border-color 140ms ease;
+}
+
+.plane-image-toggle-slider::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: #eef6fd;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.28);
+    transition: transform 140ms ease;
+}
+
+.plane-image-toggle-switch input:checked + .plane-image-toggle-slider {
+    background: rgba(119, 183, 234, 0.28);
+    border-color: rgba(119, 183, 234, 0.42);
+}
+
+.plane-image-toggle-switch input:checked + .plane-image-toggle-slider::after {
+    transform: translateX(16px);
+}
+
+.plane-image-toggle-switch input:focus-visible + .plane-image-toggle-slider {
+    box-shadow: 0 0 0 3px rgba(119, 183, 234, 0.16);
+}
+
 .plane-side-panel-subsection {
     display: grid;
-    gap: 8px;
+    flex: 1 1 auto;
+    gap: 5px;
     min-height: 0;
+    overflow: hidden;
 }
 
 .plane-side-panel-view-hidden {
@@ -406,28 +498,35 @@ body::after {
 
 .plane-side-panel-subsection-header {
     display: grid;
-    gap: 4px;
+    gap: 2px;
 }
 
 .plane-side-panel-subsection-header small {
     color: var(--muted);
-    font-size: 0.7rem;
-    line-height: 1.35;
+    font-size: 0.56rem;
+    line-height: 1.1;
 }
 
 .plane-side-panel-subsection-header-compact {
-    gap: 2px;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 8px;
+}
+
+.plane-side-panel-subsection-header-compact > div {
+    display: grid;
+    gap: 1px;
 }
 
 .plane-side-panel-spawn-button {
     width: 100%;
-    padding: 9px 12px;
+    padding: 6px 8px;
     border: 1px solid rgba(108, 255, 157, 0.34);
     border-radius: 10px;
     background: rgba(108, 255, 157, 0.12);
     color: #dffff0;
     font: inherit;
-    font-size: 0.78rem;
+    font-size: 0.64rem;
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -448,8 +547,8 @@ body::after {
 .plane-airline-row {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin: 8px 0 6px;
+    gap: 8px;
+    margin: 5px 0 4px;
 }
 
 .plane-airline-meta {
@@ -458,14 +557,14 @@ body::after {
 }
 
 .airline-badge {
-    width: 92px;
-    height: 40px;
-    flex: 0 0 92px;
+    width: 76px;
+    height: 30px;
+    flex: 0 0 76px;
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    padding: 4px 8px;
-    border-radius: 8px;
+    padding: 3px 6px;
+    border-radius: 7px;
     background: #ffffff;
     border: 1px solid rgba(15, 22, 28, 0.12);
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.64);
@@ -492,17 +591,18 @@ body::after {
 
 .plane-search-field {
     display: grid;
-    gap: 6px;
+    gap: 3px;
 }
 
 .plane-search-field input {
     width: 100%;
-    padding: 10px 12px;
-    border-radius: 12px;
+    padding: 7px 8px;
+    border-radius: 10px;
     border: 1px solid rgba(255, 255, 255, 0.08);
     background: rgba(255, 255, 255, 0.05);
     color: var(--text);
     font: inherit;
+    font-size: 0.8rem;
     outline: none;
 }
 
@@ -515,10 +615,81 @@ body::after {
     box-shadow: 0 0 0 3px rgba(119, 183, 234, 0.14);
 }
 
+.plane-board-columns-button {
+    display: inline-grid;
+    place-items: center;
+    align-items: center;
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid rgba(119, 183, 234, 0.24);
+    background: rgba(119, 183, 234, 0.08);
+    color: var(--text);
+    font: inherit;
+    cursor: pointer;
+    transition: background 140ms ease, border-color 140ms ease, transform 140ms ease;
+}
+
+.plane-board-columns-button:hover {
+    background: rgba(119, 183, 234, 0.14);
+    border-color: rgba(119, 183, 234, 0.4);
+    transform: translateY(-1px);
+}
+
+.plane-board-columns-arrow {
+    display: inline-block;
+    font-size: 0.9rem;
+    font-weight: 600;
+    line-height: 1;
+    color: var(--text-dark);
+}
+
+.plane-side-panel-resize-handle {
+    position: absolute;
+    z-index: 3;
+}
+
+.plane-side-panel-resize-handle-right {
+    top: 12px;
+    right: -1px;
+    bottom: 22px;
+    width: 12px;
+    cursor: ew-resize;
+}
+
+.plane-side-panel-resize-handle-bottom {
+    right: 22px;
+    bottom: -1px;
+    left: 12px;
+    height: 12px;
+    cursor: ns-resize;
+}
+
+.plane-side-panel-resize-handle-corner {
+    right: -1px;
+    bottom: -1px;
+    width: 20px;
+    height: 20px;
+    cursor: nwse-resize;
+}
+
+.plane-side-panel-resize-handle-corner::before {
+    content: "";
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    width: 9px;
+    height: 9px;
+    border-right: 2px solid rgba(119, 183, 234, 0.5);
+    border-bottom: 2px solid rgba(119, 183, 234, 0.5);
+    border-bottom-right-radius: 3px;
+}
+
 .plane-side-panel-list {
     display: grid;
     flex: 1 1 auto;
-    gap: 10px;
+    gap: 6px;
     min-height: 0;
     overflow-y: auto;
     padding-right: 4px;
@@ -527,7 +698,7 @@ body::after {
 .plane-command-queue {
     display: grid;
     flex: 1 1 auto;
-    gap: 8px;
+    gap: 5px;
     min-height: 0;
     overflow-y: auto;
     padding-right: 4px;
@@ -536,21 +707,21 @@ body::after {
 .plane-side-panel-nav {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    gap: 5px;
 }
 
 .plane-side-panel-nav-button {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 8px;
-    padding: 10px 12px;
+    gap: 6px;
+    padding: 7px 8px;
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
+    border-radius: 10px;
     background: rgba(255, 255, 255, 0.04);
     color: var(--text);
     font: inherit;
-    font-size: 0.78rem;
+    font-size: 0.66rem;
     font-weight: 600;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -562,12 +733,12 @@ body::after {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 24px;
-    padding: 2px 6px;
+    min-width: 22px;
+    padding: 1px 6px;
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.08);
     color: var(--muted-dark);
-    font-size: 0.7rem;
+    font-size: 0.64rem;
     letter-spacing: 0;
 }
 
@@ -589,13 +760,13 @@ body::after {
 
 .plane-control-section {
     display: grid;
-    gap: 8px;
+    gap: 6px;
 }
 
 .plane-control-section-heading {
     display: grid;
-    gap: 2px;
-    padding: 2px 2px 0;
+    gap: 1px;
+    padding: 1px 2px 0;
 }
 
 .plane-control-section-heading strong {
@@ -607,23 +778,24 @@ body::after {
 
 .plane-control-section-count {
     justify-self: start;
-    padding: 2px 8px;
+    padding: 1px 7px;
     border-radius: 999px;
     background: rgba(119, 183, 234, 0.14);
     border: 1px solid rgba(119, 183, 234, 0.2);
     color: var(--text);
-    font-size: 0.68rem;
+    font-size: 0.7rem;
     font-weight: 600;
 }
 
 .plane-control-section-heading small {
-    color: var(--muted);
-    font-size: 0.66rem;
+    display: none;
 }
 
 .plane-control-section-list {
     display: grid;
-    gap: 10px;
+    gap: 8px;
+    grid-template-columns: repeat(var(--plane-board-columns), minmax(0, 1fr));
+    align-items: start;
 }
 
 .plane-control-section-empty {
@@ -680,6 +852,12 @@ body::after {
     display: block;
 }
 
+.plane-command-card-head strong,
+.plane-control-card strong {
+    font-size: 0.98rem;
+    line-height: 1.12;
+}
+
 .plane-command-card small {
     color: var(--muted);
 }
@@ -691,7 +869,7 @@ body::after {
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.08);
     color: var(--text-dark);
-    font-size: 0.64rem;
+    font-size: 0.72rem;
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -700,7 +878,7 @@ body::after {
 
 .plane-command-summary {
     margin: 7px 0 8px;
-    font-size: 0.7rem;
+    font-size: 0.8rem;
     line-height: 1.35;
     color: rgba(237, 242, 247, 0.82);
 }
@@ -712,10 +890,16 @@ body::after {
 }
 
 .plane-control-card {
-    padding: 12px;
-    border-radius: 14px;
+    padding: 8px;
+    border-radius: 12px;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.025));
     border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.plane-control-card small,
+.plane-command-card small {
+    font-size: 0.74rem;
+    line-height: 1.22;
 }
 
 .plane-control-card-linked {
@@ -737,18 +921,18 @@ body::after {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
-    gap: 10px;
-    margin-bottom: 4px;
+    gap: 8px;
+    margin-bottom: 2px;
 }
 
 .plane-control-status {
     display: inline-flex;
     align-items: center;
-    padding: 5px 8px;
+    padding: 4px 7px;
     border-radius: 999px;
     background: rgba(119, 183, 234, 0.14);
     color: #cfe4ff;
-    font-size: 0.68rem;
+    font-size: 0.7rem;
     line-height: 1;
     white-space: nowrap;
 }
@@ -868,18 +1052,18 @@ body::after {
 .plane-runway-selector {
     display: flex;
     flex-wrap: wrap;
-    gap: 4px;
-    margin: 7px 0 5px;
+    gap: 3px;
+    margin: 4px 0 3px;
 }
 
 .plane-runway-button {
-    padding: 4px 8px;
+    padding: 3px 7px;
     border: 1px solid rgba(255, 255, 255, 0.12);
     border-radius: 999px;
     background: rgba(255, 255, 255, 0.04);
     color: var(--text);
     font: inherit;
-    font-size: 0.71rem;
+    font-size: 0.72rem;
     line-height: 1.1;
     cursor: pointer;
     transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
@@ -888,15 +1072,15 @@ body::after {
 .plane-action-row {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 6px;
-    margin: 4px 0 5px;
+    gap: 4px;
+    margin: 3px 0;
 }
 
 .plane-clearance-row {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
-    gap: 6px;
-    margin: 4px 0 5px;
+    gap: 4px;
+    margin: 3px 0;
 }
 
 .plane-runway-button:hover {
@@ -913,15 +1097,15 @@ body::after {
 
 .plane-action-button {
     width: 100%;
-    margin: 3px 0 6px;
-    padding: 5px 8px;
+    margin: 2px 0 3px;
+    padding: 4px 6px;
     border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 10px;
+    border-radius: 9px;
     background: rgba(255, 255, 255, 0.04);
     color: var(--text);
     font: inherit;
-    font-size: 0.71rem;
-    line-height: 1.1;
+    font-size: 0.72rem;
+    line-height: 1.12;
     cursor: pointer;
     transition: background 120ms ease, border-color 120ms ease, transform 120ms ease;
 }
@@ -943,8 +1127,8 @@ body::after {
 
 .plane-action-button.clearance {
     margin-bottom: 0;
-    padding: 6px 7px;
     font-size: 0.64rem;
+    padding: 4px 5px;
 }
 
 .plane-action-button.active-clearance {
@@ -966,9 +1150,9 @@ body::after {
 }
 
 .plane-aircraft-photo-frame {
-    margin: 8px 0 7px;
-    padding: 8px;
-    border-radius: 14px;
+    margin: 5px 0 4px;
+    padding: 5px;
+    border-radius: 10px;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.06), rgba(255, 255, 255, 0.025));
     border: 1px solid rgba(255, 255, 255, 0.08);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
@@ -977,15 +1161,15 @@ body::after {
 .plane-aircraft-photo {
     display: block;
     width: 100%;
-    aspect-ratio: 16 / 9;
+    aspect-ratio: 21 / 8;
     object-fit: cover;
-    border-radius: 10px;
+    border-radius: 7px;
     background: rgba(5, 8, 12, 0.94);
 }
 
 .plane-control-hint {
-    font-size: 0.64rem;
-    line-height: 1.25;
+    font-size: 0.66rem;
+    line-height: 1.2;
     color: rgba(237, 242, 247, 0.56);
     display: block;
 }
@@ -1153,7 +1337,7 @@ body::after {
     display: block;
     text-transform: uppercase;
     letter-spacing: 0.14em;
-    font-size: 0.64rem;
+    font-size: 0.72rem;
     color: rgba(241, 245, 232, 0.52);
 }
 
@@ -1396,7 +1580,9 @@ body::after {
     }
 
     .plane-side-panel {
-        width: min(280px, calc(100% - 36px));
+        top: 68px;
+        height: min(var(--plane-panel-height, calc(100% - 86px)), calc(100% - 86px));
+        max-height: calc(100% - 86px);
     }
 }
 
@@ -1496,7 +1682,27 @@ body::after {
         left: 12px;
         bottom: 12px;
         width: auto;
+        height: auto;
+        min-width: 0;
+        min-height: 0;
+        max-width: none;
         max-height: 42vh;
+    }
+
+    .plane-side-panel-resize-handle {
+        display: none;
+    }
+
+    .plane-image-toggle {
+        padding: 9px 10px;
+    }
+
+    .plane-side-panel-subsection-header-compact {
+        grid-template-columns: 1fr;
+    }
+
+    .plane-board-columns-button {
+        justify-self: start;
     }
 
     .nav-tip {

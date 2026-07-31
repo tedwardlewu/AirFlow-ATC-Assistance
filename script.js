@@ -1408,6 +1408,8 @@ function getRouteProgressForPoint(routeProfile, point) {
 }
 
 function getHoldProgress(routeProfile, holdEntries, runwayStart) {
+    const minimumHoldProgress = Math.max(Math.min(runwayStart - 0.012, 0.05), 0.001);
+    const maximumHoldProgress = Math.max(runwayStart - 0.008, minimumHoldProgress);
     const bestHold = holdEntries.reduce((closestHold, holdEntry) => {
         const holdMatch = holdEntry.linePoints.reduce((bestPointMatch, holdPoint) => {
             const pointMatch = getRouteProgressForPoint(routeProfile, holdPoint);
@@ -1428,10 +1430,10 @@ function getHoldProgress(routeProfile, holdEntries, runwayStart) {
     }, null);
 
     if (!bestHold || bestHold.distanceSquared > 8e-7) {
-        return Math.max(runwayStart - 0.03, 0.05);
+        return Math.min(Math.max(runwayStart - 0.03, minimumHoldProgress), maximumHoldProgress);
     }
 
-    return Math.max(Math.min(bestHold.progress - 0.006, runwayStart - 0.008), 0.05);
+    return Math.min(Math.max(bestHold.progress - 0.006, minimumHoldProgress), maximumHoldProgress);
 }
 
 function getRunwayStartProgress(routeProfile, runwayMatch, fallbackRunwayStart) {
@@ -3257,14 +3259,144 @@ function setupMap() {
         const planeCommandQueue = document.getElementById("plane-command-queue");
         const planeControlList = document.getElementById("plane-control-list");
         const planeSearchInput = document.getElementById("plane-search-input");
+        const planeImageToggleInput = document.getElementById("plane-image-toggle-input");
+        const planeBoardColumnsButton = document.getElementById("plane-board-columns-button");
+        const planeBoardColumnsArrow = document.getElementById("plane-board-columns-arrow");
+        const planeSidePanel = document.querySelector(".plane-side-panel");
+        const planePanelResizeHandles = Array.from(document.querySelectorAll("[data-plane-panel-resize]"));
         const manualArrivalSpawnButton = document.getElementById("manual-arrival-spawn");
+        const planeImagesStorageKey = "airflow-atc-plane-images-enabled";
+        const planeBoardColumnsStorageKey = "airflow-atc-plane-board-columns";
+        const planePanelSizeStorageKey = "airflow-atc-plane-panel-size";
         let activePlanePanelView = "queue";
         let lastPlaneCommandQueueMarkup = "";
         let lastPlaneCommandQueueRenderAt = 0;
         let lastPlaneControlPanelMarkup = "";
         let lastPlaneControlPanelRenderAt = 0;
         let planeSearchQuery = "";
+        let planeImagesEnabled = true;
+        let planeBoardColumns = 1;
+        let planeBoardColumnsDirection = 1;
+        let planePanelWidth = null;
+        let planePanelHeight = null;
         const planeControlPanelRefreshMs = 450;
+
+        try {
+            const savedPlaneImagesPreference = window.localStorage.getItem(planeImagesStorageKey);
+
+            if (savedPlaneImagesPreference !== null) {
+                planeImagesEnabled = savedPlaneImagesPreference !== "false";
+            }
+        } catch {
+            planeImagesEnabled = true;
+        }
+
+        try {
+            const savedPlaneBoardColumnsPreference = Number(window.localStorage.getItem(planeBoardColumnsStorageKey));
+
+            if (Number.isFinite(savedPlaneBoardColumnsPreference)) {
+                planeBoardColumns = Math.min(5, Math.max(1, Math.round(savedPlaneBoardColumnsPreference)));
+            }
+        } catch {
+            planeBoardColumns = 1;
+        }
+
+        try {
+            const savedPlanePanelSize = JSON.parse(window.localStorage.getItem(planePanelSizeStorageKey) ?? "null");
+
+            if (savedPlanePanelSize && typeof savedPlanePanelSize === "object") {
+                const savedWidth = Number(savedPlanePanelSize.width);
+                const savedHeight = Number(savedPlanePanelSize.height);
+
+                planePanelWidth = Number.isFinite(savedWidth) ? savedWidth : null;
+                planePanelHeight = Number.isFinite(savedHeight) ? savedHeight : null;
+            }
+        } catch {
+            planePanelWidth = null;
+            planePanelHeight = null;
+        }
+
+        if (planeImageToggleInput) {
+            planeImageToggleInput.checked = planeImagesEnabled;
+        }
+
+        function applyPlaneBoardColumns(nextPlaneBoardColumns) {
+            planeBoardColumns = Math.min(5, Math.max(1, Math.round(Number(nextPlaneBoardColumns) || 1)));
+
+            if (planeBoardColumns >= 5) {
+                planeBoardColumnsDirection = -1;
+            } else if (planeBoardColumns <= 1) {
+                planeBoardColumnsDirection = 1;
+            }
+
+            if (planeBoardColumnsArrow) {
+                planeBoardColumnsArrow.textContent = planeBoardColumnsDirection > 0 ? "→" : "←";
+            }
+
+            if (planeBoardColumnsButton) {
+                const directionLabel = planeBoardColumnsDirection > 0 ? "expand" : "collapse";
+                planeBoardColumnsButton.setAttribute("aria-label", `Aircraft board columns ${planeBoardColumns}. Click to ${directionLabel} the board.`);
+                planeBoardColumnsButton.setAttribute("title", `Aircraft board columns: ${planeBoardColumns}. Click to ${directionLabel}.`);
+            }
+
+            planeSidePanel?.style.setProperty("--plane-board-columns", String(planeBoardColumns));
+        }
+
+        function getPlanePanelMaxSize() {
+            const mapStageRect = planeSidePanel?.parentElement?.getBoundingClientRect();
+
+            if (!mapStageRect) {
+                return { maxWidth: 1100, maxHeight: 900 };
+            }
+
+            const topOffset = window.innerWidth <= 1200 ? 68 : 58;
+            return {
+                maxWidth: Math.max(320, Math.round(mapStageRect.width - 36)),
+                maxHeight: Math.max(280, Math.round(mapStageRect.height - topOffset - 18))
+            };
+        }
+
+        function persistPlanePanelSize() {
+            try {
+                window.localStorage.setItem(planePanelSizeStorageKey, JSON.stringify({
+                    width: planePanelWidth,
+                    height: planePanelHeight
+                }));
+            } catch {
+                // Ignore storage failures and keep the size in memory.
+            }
+        }
+
+        function applyPlanePanelSize() {
+            if (!planeSidePanel) {
+                return;
+            }
+
+            if (window.innerWidth <= 800) {
+                planeSidePanel.style.removeProperty("--plane-panel-width");
+                planeSidePanel.style.removeProperty("--plane-panel-height");
+                return;
+            }
+
+            const { maxWidth, maxHeight } = getPlanePanelMaxSize();
+
+            if (Number.isFinite(planePanelWidth)) {
+                planePanelWidth = Math.min(maxWidth, Math.max(320, Math.round(planePanelWidth)));
+                planeSidePanel.style.setProperty("--plane-panel-width", `${planePanelWidth}px`);
+            } else {
+                planeSidePanel.style.removeProperty("--plane-panel-width");
+            }
+
+            if (Number.isFinite(planePanelHeight)) {
+                planePanelHeight = Math.min(maxHeight, Math.max(280, Math.round(planePanelHeight)));
+                planeSidePanel.style.setProperty("--plane-panel-height", `${planePanelHeight}px`);
+            } else {
+                planeSidePanel.style.removeProperty("--plane-panel-height");
+            }
+        }
+
+        applyPlaneBoardColumns(planeBoardColumns);
+        applyPlanePanelSize();
 
         function setActivePlanePanelView(viewName) {
             activePlanePanelView = viewName === "board" ? "board" : "queue";
@@ -3432,6 +3564,10 @@ function setupMap() {
         }
 
         function createAircraftPhotoMarkup(plane) {
+            if (!planeImagesEnabled) {
+                return "";
+            }
+
             const aircraftPhoto = getAircraftPhoto(plane);
 
             if (!aircraftPhoto) {
@@ -4258,6 +4394,33 @@ function setupMap() {
             return animatedPlane;
         }).filter(Boolean);
         const planeByCallsign = new Map(animatedPlanes.map((plane) => [plane.callsign, plane]));
+
+        window.__airflowAtcDebug = {
+            getPlaneSnapshot(callsign) {
+                const plane = planeByCallsign.get(callsign);
+
+                if (!plane) {
+                    return null;
+                }
+
+                return {
+                    callsign: plane.callsign,
+                    progress: plane.progress,
+                    holdProgress: plane.holdProgress,
+                    runwayStart: plane.runwayStart,
+                    pushbackEnd: plane.pushbackEnd,
+                    departureClearance: getPlaneDepartureClearance(plane),
+                    holdStartedAt: plane.holdStartedAt,
+                    runwayName: plane.runwayName,
+                    hasAssignedRunway: plane.hasAssignedRunway,
+                    returningToGate: plane.returningToGate,
+                    operationType: plane.operationType,
+                    speedMultiplier: plane.speedMultiplier,
+                    markerLatLng: plane.marker?.getLatLng?.() ?? null
+                };
+            }
+        };
+
         const { spawnArrivalPlane } = createPlaneArrivalSpawner({
             animatedPlanes,
             planeByCallsign,
@@ -4421,6 +4584,82 @@ function setupMap() {
             });
         }
 
+        if (planeImageToggleInput) {
+            planeImageToggleInput.addEventListener("change", (event) => {
+                planeImagesEnabled = Boolean(event.target.checked);
+                lastPlaneCommandQueueMarkup = "";
+                lastPlaneControlPanelMarkup = "";
+
+                try {
+                    window.localStorage.setItem(planeImagesStorageKey, String(planeImagesEnabled));
+                } catch {
+                    // Ignore storage failures and keep the setting in memory.
+                }
+
+                renderPlaneCommandQueue(animatedPlanes);
+                renderPlaneControlPanel(animatedPlanes);
+            });
+        }
+
+        if (planeBoardColumnsButton) {
+            planeBoardColumnsButton.addEventListener("click", () => {
+                applyPlaneBoardColumns(planeBoardColumns + planeBoardColumnsDirection);
+                lastPlaneControlPanelMarkup = "";
+
+                try {
+                    window.localStorage.setItem(planeBoardColumnsStorageKey, String(planeBoardColumns));
+                } catch {
+                    // Ignore storage failures and keep the setting in memory.
+                }
+
+                renderPlaneControlPanel(animatedPlanes);
+            });
+        }
+
+        if (planePanelResizeHandles.length && planeSidePanel) {
+            planePanelResizeHandles.forEach((handle) => {
+                handle.addEventListener("pointerdown", (event) => {
+                    if (window.innerWidth <= 800) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    const resizeAxis = handle.getAttribute("data-plane-panel-resize") ?? "corner";
+                    const startRect = planeSidePanel.getBoundingClientRect();
+                    const startX = event.clientX;
+                    const startY = event.clientY;
+
+                    const handlePointerMove = (moveEvent) => {
+                        const deltaX = moveEvent.clientX - startX;
+                        const deltaY = moveEvent.clientY - startY;
+
+                        if (resizeAxis === "right" || resizeAxis === "corner") {
+                            planePanelWidth = startRect.width + deltaX;
+                        }
+
+                        if (resizeAxis === "bottom" || resizeAxis === "corner") {
+                            planePanelHeight = startRect.height + deltaY;
+                        }
+
+                        applyPlanePanelSize();
+                    };
+
+                    const handlePointerUp = () => {
+                        window.removeEventListener("pointermove", handlePointerMove);
+                        window.removeEventListener("pointerup", handlePointerUp);
+                        persistPlanePanelSize();
+                    };
+
+                    window.addEventListener("pointermove", handlePointerMove);
+                    window.addEventListener("pointerup", handlePointerUp);
+                });
+            });
+        }
+
+        window.addEventListener("resize", () => {
+            applyPlanePanelSize();
+        });
+
         animatedPlanes.forEach((plane) => {
             plane.allPlanes = animatedPlanes;
         });
@@ -4523,6 +4762,8 @@ function setupMap() {
                         plane.progress = plane.runwayStart;
                     }
 
+                    const intendedProgress = plane.progress;
+
                     if (plane.progress >= 1) {
                         setPlaneParked(plane);
                         didWrapToRouteStart = true;
@@ -4618,15 +4859,24 @@ function setupMap() {
                     const isSpacingBlocked = !didWrapToRouteStart
                         && spacingResolution.progress < (previousProgress - 1e-6);
 
-                    if (isSpacingBlocked) {
+                    const isImmediateRunwayLeader = !plane.returningToGate
+                        && plane.operationType !== "arrival"
+                        && getPlaneDepartureClearance(plane) === "immediate"
+                        && runwayDepartureLeader === plane
+                        && previousProgress >= ((plane.runwayStart ?? 0) - 1e-6);
+
+                    if (isSpacingBlocked && !isImmediateRunwayLeader) {
                         plane.progress = previousProgress;
+                    } else if (isImmediateRunwayLeader) {
+                        plane.progress = Math.max(intendedProgress, plane.runwayStart ?? intendedProgress);
                     } else {
                         plane.progress = spacingResolution.progress;
                     }
 
-                    const position = isSpacingBlocked
-                        ? interpolateRouteProfile(plane.routeProfile, plane.progress)
-                        : spacingResolution.position;
+                    const usedResolvedSpacingProgress = Math.abs(plane.progress - spacingResolution.progress) <= 1e-6;
+                    const position = usedResolvedSpacingProgress
+                        ? spacingResolution.position
+                        : interpolateRouteProfile(plane.routeProfile, plane.progress);
 
                     if (isPlaneOnRunway(plane)) {
                         occupiedRunways.add(plane.runwayName);
