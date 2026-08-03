@@ -5,7 +5,7 @@ import planeLogo from "./Media/Plane Logo.png";
 import { MajorAirlines } from "./AirlineCatalog.js";
 import { AirlineAircraftPhotoFiles, AssignAircraftModels } from "./AircraftCatalog.js";
 import { createPlaneArrivalOperations, createPlaneArrivalSpawner } from "./arrivals.js";
-import { createPlaneDepartureOperations } from "./departures.js";
+import { createDepOps } from "./departures.js";
 
 const airlineLogoModules = import.meta.glob("./Media/*.{png,jpg,jpeg,webp,svg,avif}", {
     eager: true,
@@ -2390,15 +2390,15 @@ function getDepartureSpeed(plane) {
     }
 
     if (plane.progress < plane.pushbackEnd) {
-        return plane.pushbackSpeed * speedMultiplier;
+        return plane.pushbackSpeed * departurePushbackSpeedFactor * speedMultiplier;
     }
 
     if (plane.progress < plane.holdProgress) {
-        return plane.taxiSpeed * speedMultiplier;
+        return plane.taxiSpeed * departureTaxiToRunwaySpeedFactor * speedMultiplier;
     }
 
     if (plane.progress < plane.runwayStart) {
-        return plane.lineupSpeed * speedMultiplier;
+        return plane.lineupSpeed * departureTaxiToRunwaySpeedFactor * speedMultiplier;
     }
 
     const takeoffProgress = (plane.progress - plane.runwayStart) / Math.max(1 - plane.runwayStart, 0.0001);
@@ -2408,6 +2408,8 @@ function getDepartureSpeed(plane) {
 const approachDisplayCeilingFeet = 3200;
 const departureDisplayCeilingFeet = 3400;
 const standardTaxiSpeedKnots = 30;
+const departurePushbackSpeedFactor = 0.5;
+const departureTaxiToRunwaySpeedFactor = 0.75;
 const approachDisplayMinKnots = 180;
 const approachDisplayMaxKnots = 250;
 
@@ -3363,7 +3365,6 @@ function setupMap() {
                     height: planePanelHeight
                 }));
             } catch {
-                // Ignore storage failures and keep the size in memory.
             }
         }
 
@@ -3889,7 +3890,7 @@ function setupMap() {
             const selectedRunway = button.getAttribute("data-runway");
 
             if (selectedRunway) {
-                reroutePlaneToRunway(plane, selectedRunway);
+                rerouteToRunway(plane, selectedRunway);
                 return;
             }
 
@@ -3900,12 +3901,12 @@ function setupMap() {
                     return;
                 }
 
-                setPlaneDepartureClearance(plane, selectedClearance);
+                setDepClearance(plane, selectedClearance);
                 return;
             }
 
             if (button.hasAttribute("data-abort-takeoff")) {
-                abortPlaneTakeoff(plane);
+                abortTakeoff(plane);
                 return;
             }
 
@@ -4104,11 +4105,11 @@ function setupMap() {
         });
 
         const {
-            setPlaneDepartureClearance,
-            setPlaneParked,
-            abortPlaneTakeoff,
-            reroutePlaneToRunway
-        } = createPlaneDepartureOperations({
+            setDepClearance,
+            parkPlane,
+            abortTakeoff,
+            rerouteToRunway
+        } = createDepOps({
             getRunwayHoldProgress,
             clearPlaneApproachGuide,
             baseLandingSuccessRate,
@@ -4593,7 +4594,6 @@ function setupMap() {
                 try {
                     window.localStorage.setItem(planeImagesStorageKey, String(planeImagesEnabled));
                 } catch {
-                    // Ignore storage failures and keep the setting in memory.
                 }
 
                 renderPlaneCommandQueue(animatedPlanes);
@@ -4609,7 +4609,6 @@ function setupMap() {
                 try {
                     window.localStorage.setItem(planeBoardColumnsStorageKey, String(planeBoardColumns));
                 } catch {
-                    // Ignore storage failures and keep the setting in memory.
                 }
 
                 renderPlaneControlPanel(animatedPlanes);
@@ -4765,7 +4764,7 @@ function setupMap() {
                     const intendedProgress = plane.progress;
 
                     if (plane.progress >= 1) {
-                        setPlaneParked(plane);
+                        parkPlane(plane);
                         didWrapToRouteStart = true;
                     }
 

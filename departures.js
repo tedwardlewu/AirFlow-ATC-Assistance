@@ -1,4 +1,4 @@
-export function createPlaneDepartureOperations(dependencies) {
+export function createDepOps(deps) {
     const {
         getRunwayHoldProgress,
         clearPlaneApproachGuide,
@@ -10,35 +10,35 @@ export function createPlaneDepartureOperations(dependencies) {
         createRouteProfile,
         interpolateRouteProfile,
         buildReturnToGateRoute,
-        parkingLineSets,
-        taxiwayLineSets,
-        runwayLineSets,
-        surfaceRouteGraph,
+        parkingLineSets: parkingLines,
+        taxiwayLineSets: taxiLines,
+        runwayLineSets: runwayLines,
+        surfaceRouteGraph: surfaceGraph,
         buildDepartureRoute,
-        holdLineSets,
-        taxiwayRouteGraph,
+        holdLineSets: holdLines,
+        taxiwayRouteGraph: taxiGraph,
         buildDirectDepartureRoute
-    } = dependencies;
+    } = deps;
 
-    function setPlaneDepartureClearance(plane, clearance) {
-        plane.departureClearance = clearance;
+    function setDepClearance(plane, clr) {
+        plane.departureClearance = clr;
 
-        if (clearance === "hold-short" && plane.progress >= plane.holdProgress && plane.progress < plane.runwayStart) {
+        if (clr === "hold-short" && plane.progress >= plane.holdProgress && plane.progress < plane.runwayStart) {
             plane.progress = getRunwayHoldProgress(plane);
         }
 
-        if (clearance === "immediate" && plane.progress >= getRunwayHoldProgress(plane)) {
+        if (clr === "immediate" && plane.progress >= getRunwayHoldProgress(plane)) {
             plane.progress = Math.min(Math.max(plane.progress, plane.runwayStart + 0.0005), 0.994);
         }
 
-        if (clearance !== "immediate" && plane.progress >= plane.runwayStart && plane.progress < 0.995) {
+        if (clr !== "immediate" && plane.progress >= plane.runwayStart && plane.progress < 0.995) {
             plane.progress = plane.runwayStart;
         }
 
         updatePlanePopup(plane, true);
     }
 
-    function setPlaneParked(plane) {
+    function parkPlane(plane) {
         clearPlaneApproachGuide(plane);
         plane.route = null;
         plane.routeProfile = null;
@@ -71,18 +71,18 @@ export function createPlaneDepartureOperations(dependencies) {
         updatePlanePopup(plane);
     }
 
-    function applyDepartureRouteToPlane(plane, departureRoute, nextProgress = 0) {
+    function applyDepRoute(plane, depRoute, nextProg = 0) {
         clearPlaneApproachGuide(plane);
-        plane.route = departureRoute.route;
-        plane.routeProfile = createRouteProfile(departureRoute.route);
-        plane.parkingId = departureRoute.parkingId;
-        plane.parkingName = departureRoute.parkingName;
-        plane.runwayName = departureRoute.runwayName;
-        plane.pushbackEnd = departureRoute.pushbackEnd;
-        plane.holdProgress = departureRoute.holdProgress;
-        plane.runwayStart = departureRoute.runwayStart;
+        plane.route = depRoute.route;
+        plane.routeProfile = createRouteProfile(depRoute.route);
+        plane.parkingId = depRoute.parkingId;
+        plane.parkingName = depRoute.parkingName;
+        plane.runwayName = depRoute.runwayName;
+        plane.pushbackEnd = depRoute.pushbackEnd;
+        plane.holdProgress = depRoute.holdProgress;
+        plane.runwayStart = depRoute.runwayStart;
         plane.holdStartedAt = null;
-        plane.progress = Math.min(Math.max(nextProgress, 0), 0.999);
+        plane.progress = Math.min(Math.max(nextProg, 0), 0.999);
         plane.hasAssignedRunway = true;
         plane.returningToGate = false;
         plane.taxiRequestPending = false;
@@ -100,26 +100,26 @@ export function createPlaneDepartureOperations(dependencies) {
         updatePlanePopup(plane);
     }
 
-    function abortPlaneTakeoff(plane) {
-        const currentLatLng = plane.marker.getLatLng();
-        const returnRoute = buildReturnToGateRoute(
-            [currentLatLng.lat, currentLatLng.lng],
-            parkingLineSets,
-            taxiwayLineSets,
-            runwayLineSets,
-            surfaceRouteGraph,
+    function abortTakeoff(plane) {
+        const pos = plane.marker.getLatLng();
+        const gateRoute = buildReturnToGateRoute(
+            [pos.lat, pos.lng],
+            parkingLines,
+            taxiLines,
+            runwayLines,
+            surfaceGraph,
             plane.standbyParkingId,
             plane.gateCoords
         );
 
-        if (!returnRoute) {
+        if (!gateRoute) {
             return;
         }
 
-        plane.route = returnRoute.route;
-        plane.routeProfile = createRouteProfile(returnRoute.route);
-        plane.parkingId = returnRoute.parkingId;
-        plane.parkingName = returnRoute.parkingName;
+        plane.route = gateRoute.route;
+        plane.routeProfile = createRouteProfile(gateRoute.route);
+        plane.parkingId = gateRoute.parkingId;
+        plane.parkingName = gateRoute.parkingName;
         plane.runwayName = null;
         plane.pushbackEnd = 0;
         plane.holdProgress = 0;
@@ -138,48 +138,48 @@ export function createPlaneDepartureOperations(dependencies) {
         updatePlanePopup(plane, true);
     }
 
-    function reroutePlaneToRunway(plane, runwayName) {
-        const isNearGate = !plane.hasAssignedRunway || plane.progress <= Math.max(plane.pushbackEnd + 0.04, 0.12);
-        const currentLatLng = plane.marker.getLatLng();
-        const departureRoute = isNearGate
+    function rerouteToRunway(plane, rwy) {
+        const nearGate = !plane.hasAssignedRunway || plane.progress <= Math.max(plane.pushbackEnd + 0.04, 0.12);
+        const pos = plane.marker.getLatLng();
+        const depRoute = nearGate
             ? buildDepartureRoute(
                 plane.gateCoords,
-                parkingLineSets,
-                taxiwayLineSets,
-                runwayLineSets,
-                holdLineSets,
-                surfaceRouteGraph,
-                taxiwayRouteGraph,
+                parkingLines,
+                taxiLines,
+                runwayLines,
+                holdLines,
+                surfaceGraph,
+                taxiGraph,
                 0,
                 new Set(),
                 {
                     preferredParkingId: plane.standbyParkingId,
-                    preferredRunwayName: runwayName
+                    preferredRunwayName: rwy
                 }
             )
             : buildDirectDepartureRoute(
-                [currentLatLng.lat, currentLatLng.lng],
-                taxiwayLineSets,
-                runwayLineSets,
-                holdLineSets,
-                surfaceRouteGraph,
-                taxiwayRouteGraph,
+                [pos.lat, pos.lng],
+                taxiLines,
+                runwayLines,
+                holdLines,
+                surfaceGraph,
+                taxiGraph,
                 0,
-                runwayName
+                rwy
             );
 
-        if (!departureRoute) {
+        if (!depRoute) {
             return;
         }
 
-        applyDepartureRouteToPlane(plane, departureRoute, isNearGate ? Math.min(plane.progress, departureRoute.pushbackEnd) : 0);
+        applyDepRoute(plane, depRoute, nearGate ? Math.min(plane.progress, depRoute.pushbackEnd) : 0);
         plane.marker.openPopup();
     }
 
     return {
-        setPlaneDepartureClearance,
-        setPlaneParked,
-        abortPlaneTakeoff,
-        reroutePlaneToRunway
+        setDepClearance,
+        parkPlane,
+        abortTakeoff,
+        rerouteToRunway
     };
 }
