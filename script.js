@@ -306,7 +306,7 @@ const maximumStartupPlaneCount = Object.values(maximumStartupAssignmentsByAirlin
     .reduce((totalPlanes, maximumPlanes) => totalPlanes + maximumPlanes, 0);
 const arrivalSpawnIntervalMs = 60000;
 const departureTaxiRequestIntervalMs = 60000;
-const automatedArrivalSpawnIntervalMs = 30000;
+const automatedArrivalSpawnIntervalMs = 50000;
 const automatedDepartureTaxiAssignmentIntervalMs = 13000;
 const autoTrafficDecisionIntervalMs = 1400;
 const maximumAutomatedDepartureQueuePerRunway = 3;
@@ -974,6 +974,24 @@ function getLinePoints(entry) {
     return Array.isArray(entry) ? entry : entry.linePoints;
 }
 
+const disabledTaxiwayLineEndpoints = [];
+
+function isDisabledTaxiwayLine(linePoints) {
+    if (!Array.isArray(linePoints) || linePoints.length < 2) {
+        return false;
+    }
+
+    const lineStart = linePoints[0];
+    const lineEnd = linePoints.at(-1);
+
+    return disabledTaxiwayLineEndpoints.some(({ start, end }) => {
+        return (
+            (arePointsEquivalent(lineStart, start, 1e-10) && arePointsEquivalent(lineEnd, end, 1e-10))
+            || (arePointsEquivalent(lineStart, end, 1e-10) && arePointsEquivalent(lineEnd, start, 1e-10))
+        );
+    });
+}
+
 function shuffleItems(items) {
     const shuffledItems = [...items];
 
@@ -1341,34 +1359,38 @@ function orientParkingPushbackRoute(linePoints, taxiwayLines) {
         : [...linePoints];
 }
 
-function buildRunwayDepartureRoute(runwayMatch) {
-    const forwardRoute = [
-        runwayMatch.projectedPoint,
-        ...runwayMatch.linePoints.slice(runwayMatch.segmentIndex + 1)
-    ];
-    const reverseRoute = [
-        runwayMatch.projectedPoint,
-        ...runwayMatch.linePoints.slice(0, runwayMatch.segmentIndex + 1).reverse()
-    ];
-    const isReversedRunwayDirection = getRunwayDesignations(runwayMatch.entry?.name ?? "").some((designation) => designation === "06R" || designation === "24L");
-    const preferForwardRoute = measurePolylineLength(forwardRoute) >= measurePolylineLength(reverseRoute);
-    const chosenRoute = (isReversedRunwayDirection ? !preferForwardRoute : preferForwardRoute)
-        ? forwardRoute
-        : reverseRoute;
+function buildRunwayDepartureRoute(runwayEntry, threshold, runwayEntryPoint = threshold.point) {
+    const orderedRunwayPoints = getOrderedRunwayPoints(runwayEntry, threshold.point);
+    const runwayProfile = createRouteProfile(orderedRunwayPoints);
+    const entryProgress = getRouteProgressForPoint(runwayProfile, runwayEntryPoint).progress;
+    const chosenRoute = dedupeRoutePoints([
+        runwayEntryPoint,
+        ...orderedRunwayPoints.filter((point) => getRouteProgressForPoint(runwayProfile, point).progress > entryProgress + 1e-6)
+    ]);
 
     if (chosenRoute.length < 2) {
         return null;
     }
 
+    const departureHeading = getHeadingBetweenPoints(chosenRoute[0], chosenRoute.at(-1));
+    const hasReverseSegment = chosenRoute.slice(0, -1).some((point, index) => {
+        const segmentHeading = getHeadingBetweenPoints(point, chosenRoute[index + 1]);
+        return getHeadingDifference(segmentHeading, departureHeading) > 90;
+    });
+
+    if (hasReverseSegment) {
+        return null;
+    }
+
     const runwayEnd = chosenRoute.at(-1);
     const runwayPreEnd = chosenRoute.at(-2) ?? chosenRoute[0];
-    const departureHeading = getHeadingBetweenPoints(runwayPreEnd, runwayEnd);
-    const initialClimbPoint = projectPointByHeading(runwayEnd, departureHeading, departureClimbOutDistanceMeters * 0.28);
-    const departureExitPoint = projectPointByHeading(runwayEnd, departureHeading, departureClimbOutDistanceMeters);
+    const climbHeading = getHeadingBetweenPoints(runwayPreEnd, runwayEnd);
+    const initialClimbPoint = projectPointByHeading(runwayEnd, climbHeading, departureClimbOutDistanceMeters * 0.28);
+    const departureExitPoint = projectPointByHeading(runwayEnd, climbHeading, departureClimbOutDistanceMeters);
 
     return {
         route: dedupeRoutePoints([...chosenRoute, initialClimbPoint, departureExitPoint]),
-        runwayName: runwayMatch.entry.name ?? "Departure Runway"
+        runwayName: runwayEntry.name ?? "Departure Runway"
     };
 }
 
@@ -1401,21 +1423,22 @@ function buildTaxiRouteToRunway(origin, taxiwayLines, runwayEntries, surfaceRout
     findLineMatches(origin, taxiwayLines)
         .slice(0, originTaxiMatchLimit)
         .forEach((taxiMatch) => {
-            runwayTargets.forEach(({ runwayMatch, runwayEntryCandidate }) => {
+            runwayTargets.forEach(({ threshold, runwayMatch, runwayEntryCandidate }) => {
                 const runwaySurfaceCandidate = runwayEntryCandidate;
                 const taxiwayOnlyRoute = runwaySurfaceCandidate
                     ? buildGraphRouteBetweenMatches(taxiwayRouteGraph, taxiMatch, runwaySurfaceCandidate.taxiwayMatch, routingOptions)
                     : null;
                 const runwayEntryBridge = runwaySurfaceCandidate && taxiwayOnlyRoute?.length
-                    ? dedupeRoutePoints([
-                        ...buildBridgeRoute(runwaySurfaceCandidate.taxiwayMatch.projectedPoint, runwaySurfaceCandidate.runwayEntryPoint),
-                        ...buildBridgeRoute(runwaySurfaceCandidate.runwayEntryPoint, runwayMatch.projectedPoint)
-                    ])
+                    ? buildBridgeRoute(runwaySurfaceCandidate.taxiwayMatch.projectedPoint, runwaySurfaceCandidate.runwayEntryPoint)
                     : [];
                 const taxiRoute = taxiwayOnlyRoute?.length
                     ? dedupeRoutePoints([...taxiwayOnlyRoute, ...runwayEntryBridge])
                     : buildGraphRouteBetweenMatches(surfaceRouteGraph, taxiMatch, runwayMatch, routingOptions);
-                const runwayDeparture = buildRunwayDepartureRoute(runwayMatch);
+                const runwayDeparture = buildRunwayDepartureRoute(
+                    runwayMatch.entry,
+                    threshold,
+                    runwaySurfaceCandidate?.runwayEntryPoint
+                );
 
                 if (!taxiRoute?.length || !runwayDeparture) {
                     return;
@@ -1826,6 +1849,20 @@ function getArrivalRunwayDesignation(runwayEntry) {
     return designations[0] ?? null;
 }
 
+function getDepartureRunwayDesignation(runwayEntry) {
+    const designations = getRunwayDesignations(runwayEntry?.name ?? "");
+
+    if (designations.includes("24L") && designations.includes("06R")) {
+        return "06R";
+    }
+
+    if (designations.includes("24R") && designations.includes("06L")) {
+        return "24R";
+    }
+
+    return designations[1] ?? designations[0] ?? null;
+}
+
 function getArrivalRunwayThreshold(runwayEntry) {
     const linePoints = getLinePoints(runwayEntry);
 
@@ -1856,16 +1893,31 @@ function getArrivalRunwayThreshold(runwayEntry) {
 }
 
 function getDepartureRunwayThreshold(runwayEntry) {
-    const arrivalThreshold = getArrivalRunwayThreshold(runwayEntry);
+    const linePoints = getLinePoints(runwayEntry);
 
-    if (!arrivalThreshold) {
+    if (!linePoints || linePoints.length < 2) {
         return null;
     }
 
+    const departureDesignation = getDepartureRunwayDesignation(runwayEntry);
+    const desiredHeading = getRunwayDesignationHeading(departureDesignation ?? "");
+    const startPoint = linePoints[0];
+    const endPoint = linePoints.at(-1);
+    const startHeading = getHeadingBetweenPoints(startPoint, endPoint);
+    const endHeading = getHeadingBetweenPoints(endPoint, startPoint);
+
+    if (desiredHeading == null || getHeadingDifference(startHeading, desiredHeading) <= getHeadingDifference(endHeading, desiredHeading)) {
+        return {
+            designation: departureDesignation ?? runwayEntry.name ?? "Runway",
+            point: startPoint,
+            heading: startHeading
+        };
+    }
+
     return {
-        designation: arrivalThreshold.designation,
-        point: arrivalThreshold.point,
-        heading: arrivalThreshold.heading
+        designation: departureDesignation ?? runwayEntry.name ?? "Runway",
+        point: endPoint,
+        heading: endHeading
     };
 }
 
@@ -1918,7 +1970,7 @@ function getDepartureRunwayEntryCandidate(runwayEntry, thresholdPoint, taxiwayLi
         return clusters;
     }, []);
 
-    return clusteredCandidates
+    const dedupedCandidates = clusteredCandidates
         .map((cluster) => {
             return cluster.reduce((bestCandidate, candidate) => {
                 if (!bestCandidate || candidate.taxiwayLineLength > bestCandidate.taxiwayLineLength) {
@@ -1928,7 +1980,15 @@ function getDepartureRunwayEntryCandidate(runwayEntry, thresholdPoint, taxiwayLi
                 return bestCandidate;
             }, null);
         })
-        .filter(Boolean)[0] ?? null;
+        .filter(Boolean);
+
+    if (getArrivalRunwayDesignation(runwayEntry) === "06R") {
+        return dedupedCandidates[1]
+            ?? dedupedCandidates[0]
+            ?? null;
+    }
+
+    return dedupedCandidates[0] ?? null;
 }
 
 function getPreferredArrivalExitProgress(runwayEntry) {
@@ -2447,15 +2507,15 @@ function getDepartureSpeed(plane) {
     const departureGroundSpeedMultiplier = speedMultiplier * automatedTaxiSpeedMultiplier;
 
     if (plane.progress < plane.pushbackEnd) {
-        return plane.pushbackSpeed * departurePushbackSpeedFactor * departureGroundSpeedMultiplier;
+        return plane.pushbackSpeed * departurePushbackSpeedFactor * departureMovementSpeedFactor * departureGroundSpeedMultiplier;
     }
 
     if (plane.progress < plane.holdProgress) {
-        return plane.taxiSpeed * departureTaxiToRunwaySpeedFactor * departureGroundSpeedMultiplier;
+        return plane.taxiSpeed * departureTaxiToRunwaySpeedFactor * departureMovementSpeedFactor * departureGroundSpeedMultiplier;
     }
 
     if (plane.progress < plane.runwayStart) {
-        return plane.lineupSpeed * departureTaxiToRunwaySpeedFactor * departureGroundSpeedMultiplier;
+        return plane.lineupSpeed * departureTaxiToRunwaySpeedFactor * departureMovementSpeedFactor * departureGroundSpeedMultiplier;
     }
 
     const runwayStart = plane.runwayStart ?? 1;
@@ -2479,7 +2539,7 @@ function getDepartureSpeed(plane) {
         const easedAlignmentProgress = alignmentPhaseProgress * alignmentPhaseProgress * (3 - (2 * alignmentPhaseProgress));
         const alignedRunwaySpeed = lineupRunwayEntrySpeed + ((plane.runwaySpeed - lineupRunwayEntrySpeed) * easedAlignmentProgress);
 
-        return alignedRunwaySpeed * speedMultiplier;
+        return alignedRunwaySpeed * departureTakeoffSpeedFactor * speedMultiplier;
     }
 
     const accelerationProgress = Math.min(
@@ -2488,7 +2548,7 @@ function getDepartureSpeed(plane) {
     );
     const easedTakeoffProgress = accelerationProgress ** 1.7;
 
-    return (plane.runwaySpeed + (plane.takeoffAcceleration * easedTakeoffProgress)) * speedMultiplier;
+    return (plane.runwaySpeed + (plane.takeoffAcceleration * easedTakeoffProgress * departureTakeoffAccelerationFactor)) * departureTakeoffSpeedFactor * speedMultiplier;
 }
 
 const approachDisplayCeilingFeet = 3200;
@@ -2496,6 +2556,9 @@ const departureDisplayCeilingFeet = 3400;
 const standardTaxiSpeedKnots = 30;
 const departurePushbackSpeedFactor = 0.5;
 const departureTaxiToRunwaySpeedFactor = 0.75;
+const departureMovementSpeedFactor = 0.78;
+const departureTakeoffSpeedFactor = 0.82;
+const departureTakeoffAccelerationFactor = 0.7;
 const departureRunwayEntryAlignmentMeters = 220;
 const departureRunwayEntrySpeedFactor = 0.9;
 const approachDisplayMinKnots = 180;
@@ -2619,6 +2682,10 @@ function canPlaneInitiateGoAround(plane) {
 
 function isPlaneOnRunwayAtProgress(plane, progress) {
     if (plane.operationType === "arrival" && plane.returningToGate) {
+        if (plane.goAroundUsed && progress < (plane.goAroundEndProgress ?? 0)) {
+            return false;
+        }
+
         return progress >= (plane.runwayStart ?? 0)
             && progress < (plane.arrivalRolloutEnd ?? plane.runwayStart ?? 0);
     }
@@ -2632,15 +2699,6 @@ function isPlaneOnRunway(plane) {
 
 function convertMetersToDistanceSquared(meters) {
     return (meters / 111320) ** 2;
-}
-
-const aircraftHardCollisionRadiusMeters = 40;
-const aircraftHardCollisionRadiusSquared = convertMetersToDistanceSquared(aircraftHardCollisionRadiusMeters);
-
-function findHardCollisionEntry(plane, position, resolvedPositions) {
-    return resolvedPositions.find((entry) => {
-        return entry.plane !== plane && getLatLngDistanceSquared(position, entry.position) < aircraftHardCollisionRadiusSquared;
-    }) ?? null;
 }
 
 const planeSpacingMetersByPhase = {
@@ -2677,6 +2735,25 @@ function getRunwayHoldProgress(plane) {
         Math.min(plane.holdProgress - 0.006, plane.runwayStart - 0.012),
         plane.pushbackEnd + 0.01
     );
+}
+
+function isForced06RLineupCommitmentProgress(plane, progress = plane.progress) {
+    if (
+        plane?.runwayName !== "24L/06R"
+        || plane.operationType === "arrival"
+        || plane.returningToGate
+        || !Number.isFinite(plane.holdProgress)
+        || !Number.isFinite(plane.runwayStart)
+        || plane.runwayStart <= plane.holdProgress
+    ) {
+        return false;
+    }
+
+    const lineupSpan = plane.runwayStart - plane.holdProgress;
+    const commitmentOffset = Math.min(Math.max(lineupSpan * 0.42, 0.004), Math.max(lineupSpan - 0.0015, 0.004));
+    const commitmentProgress = plane.holdProgress + commitmentOffset;
+
+    return progress >= commitmentProgress && progress < plane.runwayStart;
 }
 
 function getPlaneDepartureClearance(plane) {
@@ -2841,7 +2918,7 @@ function getMinimumPlaneSpacingSquared(plane) {
     return convertMetersToDistanceSquared(getPlaneSpacingMeters(plane));
 }
 
-const planePredictionLookaheadSeconds = [0, 1.6, 3.4, 5.2];
+const planePredictionLookaheadSeconds = [0, 0.8, 1.6, 2.4, 3.2, 4.2, 5.2];
 const arrivalRunwaySafetyBarrierBufferSeconds = 6;
 
 function getProjectedPlaneProgress(plane, progress, secondsAhead) {
@@ -2871,8 +2948,32 @@ function buildPlanePrediction(plane, progress) {
     });
 }
 
+function isPlaneActivelyGoingAround(plane) {
+    return Boolean(plane.goAroundUsed) && plane.progress < (plane.goAroundEndProgress ?? 0);
+}
+
+const aircraftHardCollisionRadiusMeters = 40;
+const aircraftHardCollisionRadiusSquared = convertMetersToDistanceSquared(aircraftHardCollisionRadiusMeters);
+
+function findHardCollisionEntry(plane, position, resolvedPositions) {
+    if (isPlaneInPushbackPhase(plane) || isPlaneActivelyGoingAround(plane)) {
+        return null;
+    }
+
+    return resolvedPositions.find((entry) => {
+        return entry.plane !== plane
+            && !isPlaneInPushbackPhase(entry.plane)
+            && !isPlaneActivelyGoingAround(entry.plane)
+            && getLatLngDistanceSquared(position, entry.position) < aircraftHardCollisionRadiusSquared;
+    }) ?? null;
+}
+
 function getBlockingPlane(position, minimumSpacingSquared, resolvedPositions) {
     return resolvedPositions.find((entry) => {
+        if (isPlaneActivelyGoingAround(entry.plane)) {
+            return false;
+        }
+
         const spacingThreshold = Math.max(minimumSpacingSquared, entry.minimumSpacingSquared);
         return getLatLngDistanceSquared(position, entry.position) < spacingThreshold;
     }) ?? null;
@@ -2880,6 +2981,10 @@ function getBlockingPlane(position, minimumSpacingSquared, resolvedPositions) {
 
 function getPredictionBlockingPlane(prediction, minimumSpacingSquared, resolvedPositions) {
     return resolvedPositions.find((entry) => {
+        if (isPlaneActivelyGoingAround(entry.plane)) {
+            return false;
+        }
+
         const spacingThreshold = Math.max(minimumSpacingSquared, entry.minimumSpacingSquared);
 
         return prediction.some((predictedPoint, index) => {
@@ -2923,6 +3028,17 @@ function clampProgressToQueue(plane, progress, queueBlocker, queueSpacingProgres
 function shouldIgnoreSpacingBlocker(plane, blockingEntry, progress) {
     if (
         plane.operationType !== "arrival"
+        && !plane.returningToGate
+        && progress >= (plane.holdProgress ?? 0)
+        && progress < (plane.runwayStart ?? 1)
+        && blockingEntry
+        && !blockingEntry.isOnRunway
+    ) {
+        return true;
+    }
+
+    if (
+        plane.operationType !== "arrival"
         || !plane.returningToGate
         || progress >= (plane.runwayStart ?? 0)
         || !blockingEntry
@@ -2935,6 +3051,18 @@ function shouldIgnoreSpacingBlocker(plane, blockingEntry, progress) {
     }
 
     return !blockingEntry.isOnRunway;
+}
+
+function shouldIgnoreHardCollisionBlocker(plane, blockingEntry) {
+    if (!blockingEntry) {
+        return false;
+    }
+
+    return plane.operationType !== "arrival"
+        && !plane.returningToGate
+        && plane.progress >= (plane.holdProgress ?? 0)
+        && plane.progress < (plane.runwayStart ?? 1)
+        && !blockingEntry.isOnRunway;
 }
 
 function evaluatePlaneProgressCandidate(plane, progress, minimumSpacingSquared, resolvedPositions) {
@@ -3138,15 +3266,30 @@ function advancePlaneProgress(plane, deltaSeconds, timestamp, runwayDepartureLea
         && plane.progress >= plane.holdProgress
         && plane.progress < plane.runwayStart
     ) {
+        if (plane.holdStartedAt == null) {
+            plane.holdStartedAt = timestamp;
+        }
+
         const canLineUp = getPlaneDepartureClearance(plane) !== "hold-short";
         const runwayOccupiedByOtherPlane = isRunwayOccupiedByOtherPlane(plane, runwayOccupancyIndex);
         const isWaitingForClearance = (runwayDepartureLeader && runwayDepartureLeader !== plane)
             || runwayOccupiedByOtherPlane
-            || plane.holdStartedAt == null
             || !canLineUp;
 
         if (isWaitingForClearance) {
-            plane.progress = getRunwayHoldProgress(plane);
+            plane.progress = Math.min(plane.progress, getRunwayHoldProgress(plane));
+        } else if (runwayDepartureLeader === plane && runwayOccupiedByOtherPlane === false) {
+            plane.departureClearance = "immediate";
+        }
+
+        if (
+            plane.progress < plane.runwayStart
+            && runwayDepartureLeader === plane
+            && !runwayOccupiedByOtherPlane
+            && getPlaneDepartureClearance(plane) !== "hold-short"
+            && isForced06RLineupCommitmentProgress(plane)
+        ) {
+            plane.progress = plane.runwayStart;
         }
     }
 
@@ -3613,7 +3756,9 @@ function setupMap() {
 
         placemark.lines.forEach((linePoints) => {
             if (category === "taxiways") {
-                taxiwayLineSets.push(linePoints);
+                if (!isDisabledTaxiwayLine(linePoints)) {
+                    taxiwayLineSets.push(linePoints);
+                }
             } else {
                 if (category === "runways") {
                     runwayLineSets.push({ id: `${placemark.id}-runway-${kmlCounts[category]}`, name: placemark.name, linePoints });
@@ -3691,6 +3836,9 @@ function setupMap() {
         const planePanelResizeHandles = Array.from(document.querySelectorAll("[data-plane-panel-resize]"));
         const autoTrafficToggleButton = document.getElementById("auto-traffic-toggle");
         const manualArrivalSpawnButton = document.getElementById("manual-arrival-spawn");
+        const efficiencyDeparturesPerHourElement = document.getElementById("efficiency-departures-per-hour");
+        const efficiencyArrivalsPerHourElement = document.getElementById("efficiency-arrivals-per-hour");
+        const efficiencyGoAroundChanceElement = document.getElementById("efficiency-go-around-chance");
         const autoTrafficStorageKey = "airflow-atc-auto-traffic-enabled";
         const planeImagesStorageKey = "airflow-atc-plane-images-enabled";
         const planeBoardColumnsStorageKey = "airflow-atc-plane-board-columns";
@@ -3709,6 +3857,16 @@ function setupMap() {
         let autoTrafficEnabled = false;
         let nextAutomatedArrivalSpawnAt = Date.now() + automatedArrivalSpawnIntervalMs;
         let nextAutomatedDepartureTaxiAssignmentAt = Date.now();
+        let departureEventTimestamps = [];
+        let arrivalEventTimestamps = [];
+        let totalGoArounds = 0;
+        let totalLandingAttempts = 0;
+        let lastEfficiencyStatsRenderAt = 0;
+        const efficiencyStatsWindowMs = 300000;
+        const efficiencyStatsHourlyRateMultiplier = 3600000 / efficiencyStatsWindowMs;
+        const stuckPlaneRecoveryTimeoutMs = 10000;
+        const stuckPlaneProgressEpsilon = 0.0003;
+        const efficiencyStatsRefreshMs = 1000;
         const planeControlPanelRefreshMs = 450;
 
         try {
@@ -4661,9 +4819,6 @@ function setupMap() {
                 return false;
             }
 
-            const candidateReservedRunways = new Set(reservedImmediateDepartureRunways);
-            candidateReservedRunways.add(plane.runwayName);
-
             return !activePlanes.some((otherPlane) => {
                 const isActiveGoAround = otherPlane.goAroundUsed
                     && otherPlane.progress < (otherPlane.goAroundEndProgress ?? 0);
@@ -4673,7 +4828,7 @@ function setupMap() {
                     && otherPlane.returningToGate
                     && !isActiveGoAround
                     && otherPlane.runwayName === plane.runwayName
-                    && shouldTriggerPredictedRunwayGoAround(otherPlane, activePlanes, candidateReservedRunways);
+                    && shouldTriggerPredictedRunwayGoAround(otherPlane, activePlanes, reservedImmediateDepartureRunways);
             });
         }
 
@@ -4736,6 +4891,113 @@ function setupMap() {
                         setDepClearance(plane, "immediate");
                     }
                 });
+        }
+
+        function pruneEventWindow(eventTimestamps) {
+            const cutoff = Date.now() - efficiencyStatsWindowMs;
+
+            while (eventTimestamps.length && eventTimestamps[0] < cutoff) {
+                eventTimestamps.shift();
+            }
+        }
+
+        function recordDepartureEvent() {
+            departureEventTimestamps.push(Date.now());
+            pruneEventWindow(departureEventTimestamps);
+        }
+
+        function recordArrivalEvent() {
+            arrivalEventTimestamps.push(Date.now());
+            pruneEventWindow(arrivalEventTimestamps);
+        }
+
+        function updateEfficiencyStatsPanel(now, force = false) {
+            if (!force && now - lastEfficiencyStatsRenderAt < efficiencyStatsRefreshMs) {
+                return;
+            }
+
+            lastEfficiencyStatsRenderAt = now;
+            pruneEventWindow(departureEventTimestamps);
+            pruneEventWindow(arrivalEventTimestamps);
+
+            const goAroundChancePercent = totalLandingAttempts > 0
+                ? Math.round((totalGoArounds / totalLandingAttempts) * 100)
+                : 0;
+
+            if (efficiencyDeparturesPerHourElement) {
+                efficiencyDeparturesPerHourElement.textContent = String(Math.round(departureEventTimestamps.length * efficiencyStatsHourlyRateMultiplier));
+            }
+
+            if (efficiencyArrivalsPerHourElement) {
+                efficiencyArrivalsPerHourElement.textContent = String(Math.round(arrivalEventTimestamps.length * efficiencyStatsHourlyRateMultiplier));
+            }
+
+            if (efficiencyGoAroundChanceElement) {
+                efficiencyGoAroundChanceElement.textContent = `${goAroundChancePercent}%`;
+            }
+        }
+
+        function despawnPlane(plane) {
+            clearPlaneApproachGuide(plane);
+            plane.marker.remove();
+            planeByCallsign.delete(plane.callsign);
+
+            const planeIndex = animatedPlanes.indexOf(plane);
+
+            if (planeIndex !== -1) {
+                animatedPlanes.splice(planeIndex, 1);
+            }
+
+            lastPlaneCommandQueueMarkup = "";
+            lastPlaneControlPanelMarkup = "";
+            renderPlaneCommandQueue(animatedPlanes, { force: true });
+            renderPlaneControlPanel(animatedPlanes, { force: true });
+        }
+
+        function recoverStuckPlane(plane) {
+            const previousRouteProfile = plane.routeProfile;
+            abortTakeoff(plane);
+
+            if (plane.routeProfile === previousRouteProfile) {
+                despawnPlane(plane);
+            }
+        }
+
+        function updatePlaneStuckWatchdog(plane, timestamp) {
+            if (!plane?.hasAssignedRunway || !plane.routeProfile?.totalLength) {
+                return;
+            }
+
+            const lastProgress = plane.stuckWatchdogProgress;
+
+            if (!Number.isFinite(lastProgress) || Math.abs(plane.progress - lastProgress) > stuckPlaneProgressEpsilon) {
+                plane.stuckWatchdogProgress = plane.progress;
+                plane.stuckWatchdogSince = timestamp;
+                return;
+            }
+
+            if (!Number.isFinite(plane.stuckWatchdogSince)) {
+                plane.stuckWatchdogSince = timestamp;
+                return;
+            }
+
+            if (timestamp - plane.stuckWatchdogSince >= stuckPlaneRecoveryTimeoutMs) {
+                plane.stuckWatchdogSince = timestamp;
+
+                if (
+                    plane.operationType !== "arrival"
+                    && !plane.returningToGate
+                    && plane.progress < (plane.runwayStart ?? 1)
+                ) {
+                    plane.progress = plane.runwayStart;
+                    plane.departureClearance = "immediate";
+                    plane.stuckWatchdogProgress = plane.progress;
+                    updatePlanePopup(plane, true);
+                    return;
+                }
+
+                recoverStuckPlane(plane);
+            }
         }
 
         function runAutoTrafficController(forceArrival = false) {
@@ -4967,7 +5229,7 @@ function setupMap() {
             }
 
             return plane.progress >= (plane.pushbackEnd ?? 0)
-                && plane.progress < (plane.runwayStart ?? 1);
+                && plane.progress < (plane.holdProgress ?? plane.runwayStart ?? 1);
         }
 
         function getPlaneTravelHeadingAtProgress(plane, progress = plane.progress) {
@@ -5768,7 +6030,10 @@ function setupMap() {
                         plane.speedMultiplier = 1;
                     }
 
+                    const currentRunwayName = plane.runwayName;
                     const runwayDepartureLeader = runwayDepartureLeaders.get(plane.runwayName);
+                    const wasArrivalReturningToGate = plane.operationType === "arrival" && plane.returningToGate;
+                    const wasDeparture = plane.operationType !== "arrival" && !plane.returningToGate;
                     const { previousProgress, intendedProgress, didWrapToRouteStart } = advancePlaneProgress(
                         plane,
                         deltaSeconds,
@@ -5778,10 +6043,17 @@ function setupMap() {
                     );
 
                     if (didWrapToRouteStart) {
+                        if (wasDeparture) {
+                            recordDepartureEvent();
+                            releaseDeparturesForFreedRunway(currentRunwayName);
+                        }
+
                         return;
                     }
 
                     if (autoAround(plane, previousProgress, plane.progress)) {
+                        totalGoArounds += 1;
+                        totalLandingAttempts += 1;
                         const conflictedRunwayName = plane.runwayName;
                         triggerPlaneGoAround(plane);
                         releaseDeparturesForFreedRunway(conflictedRunwayName);
@@ -5801,53 +6073,13 @@ function setupMap() {
                         return;
                     }
 
-                    const shouldGoAroundForOccupiedRunwayNow = plane.operationType === "arrival"
-                        && plane.returningToGate
-                        && plane.progress < (plane.runwayStart ?? 0)
-                        && (
-                            runwayOccupancyIndex.has(plane.runwayName)
-                            || reservedImmediateDepartureRunways.has(plane.runwayName)
-                        )
-                        && canPlaneGoAround(plane);
-
-                    if (shouldGoAroundForOccupiedRunwayNow) {
-                        const conflictedRunwayName = plane.runwayName;
-                        triggerPlaneGoAround(plane);
-                        releaseDeparturesForFreedRunway(conflictedRunwayName);
-
-                        const goAroundPosition = interpolateRouteProfile(plane.routeProfile, plane.progress);
-                        resolvedPositions.push({
-                            plane,
-                            position: goAroundPosition,
-                            progress: plane.progress,
-                            runwayName: plane.runwayName,
-                            operationType: plane.operationType,
-                            returningToGate: plane.returningToGate,
-                            minimumSpacingSquared: getMinimumPlaneSpacingSquared(plane),
-                            prediction: buildPlanePrediction(plane, plane.progress),
-                            isOnRunway: isPlaneOnRunway(plane)
-                        });
-                        return;
-                    }
-
-                    if (shouldTriggerPredictedRunwayGoAround(plane, activePlanes, reservedImmediateDepartureRunways)) {
-                        const conflictedRunwayName = plane.runwayName;
-                        triggerPlaneGoAround(plane);
-                        releaseDeparturesForFreedRunway(conflictedRunwayName);
-
-                        const goAroundPosition = interpolateRouteProfile(plane.routeProfile, plane.progress);
-                        resolvedPositions.push({
-                            plane,
-                            position: goAroundPosition,
-                            progress: plane.progress,
-                            runwayName: plane.runwayName,
-                            operationType: plane.operationType,
-                            returningToGate: plane.returningToGate,
-                            minimumSpacingSquared: getMinimumPlaneSpacingSquared(plane),
-                            prediction: buildPlanePrediction(plane, plane.progress),
-                            isOnRunway: isPlaneOnRunway(plane)
-                        });
-                        return;
+                    if (
+                        wasArrivalReturningToGate
+                        && previousProgress < (plane.runwayStart ?? 0)
+                        && plane.progress >= (plane.runwayStart ?? 0)
+                    ) {
+                        recordArrivalEvent();
+                        totalLandingAttempts += 1;
                     }
 
                     const predictedTaxiConflictEntry = getPredictedTaxiConflictEntry(plane, resolvedPositions);
@@ -5889,41 +6121,20 @@ function setupMap() {
 
                     const spacingFallbackProgress = didWrapToRouteStart ? plane.progress : previousProgress;
                     const spacingResolution = resolvePlaneSpacing(plane, resolvedPositions, spacingFallbackProgress);
-                    const shouldGoAroundForRunwayConflict = plane.operationType === "arrival"
-                        && plane.returningToGate
-                        && plane.progress < plane.runwayStart
-                        && spacingResolution.blockingPlane?.runwayName === plane.runwayName
-                        && spacingResolution.blockingPlane?.isOnRunway
-                        && canPlaneGoAround(plane);
-
-                    if (shouldGoAroundForRunwayConflict) {
-                        const conflictedRunwayName = plane.runwayName;
-                        triggerPlaneGoAround(plane);
-                        releaseDeparturesForFreedRunway(conflictedRunwayName);
-
-                        const goAroundPosition = interpolateRouteProfile(plane.routeProfile, plane.progress);
-                        resolvedPositions.push({
-                            plane,
-                            position: goAroundPosition,
-                            progress: plane.progress,
-                            runwayName: plane.runwayName,
-                            operationType: plane.operationType,
-                            returningToGate: plane.returningToGate,
-                            minimumSpacingSquared: spacingResolution.minimumSpacingSquared,
-                            prediction: buildPlanePrediction(plane, plane.progress),
-                            isOnRunway: isPlaneOnRunway(plane)
-                        });
-                        return;
-                    }
 
                     const isSpacingBlocked = !didWrapToRouteStart
                         && spacingResolution.progress < (previousProgress - 1e-6);
 
                     const isCommittedImmediateTakeoff = !plane.returningToGate
                         && plane.operationType !== "arrival"
-                        && hasImmediateDepartureClearance(plane)
-                        && runwayDepartureLeader === plane
-                        && previousProgress >= (getRunwayHoldProgress(plane) - 1e-6);
+                        && (
+                            plane.stuckRecoveryActive
+                            || (
+                                hasImmediateDepartureClearance(plane)
+                                && runwayDepartureLeader === plane
+                                && intendedProgress >= (getRunwayHoldProgress(plane) - 1e-6)
+                            )
+                        );
 
                     if (isSpacingBlocked && !isCommittedImmediateTakeoff && attemptTaxiConflictReroute(plane, spacingResolution.blockingPlane, timestamp)) {
                         const reroutePosition = interpolateRouteProfile(plane.routeProfile, plane.progress);
@@ -5955,7 +6166,11 @@ function setupMap() {
                         ? spacingResolution.position
                         : interpolateRouteProfile(plane.routeProfile, plane.progress);
 
-                    if (!isCommittedImmediateTakeoff && findHardCollisionEntry(plane, position, resolvedPositions)) {
+                    const hardCollisionEntry = !isCommittedImmediateTakeoff
+                        ? findHardCollisionEntry(plane, position, resolvedPositions)
+                        : null;
+
+                    if (hardCollisionEntry && !shouldIgnoreHardCollisionBlocker(plane, hardCollisionEntry)) {
                         plane.progress = previousProgress;
                         position = interpolateRouteProfile(plane.routeProfile, plane.progress);
                     }
@@ -6000,11 +6215,14 @@ function setupMap() {
                         } else if (plane) {
                             parkPlane(plane);
                         }
+                    } finally {
+                        updatePlaneStuckWatchdog(plane, timestamp);
                     }
                 });
 
                 renderPlaneCommandQueue(animatedPlanes, { force: false, timestamp });
                 renderPlaneControlPanel(animatedPlanes, { force: false, timestamp });
+                updateEfficiencyStatsPanel(timestamp);
 
                 window.requestAnimationFrame(tick);
             };
