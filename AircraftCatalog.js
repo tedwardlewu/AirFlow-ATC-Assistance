@@ -84,8 +84,7 @@ export const CommercialJetModels = [
 ];
 
 export const AirlineAircraftAssignments = {
-    // Add airline fleets here as you provide them.
-    // Once at least one airline is configured, only configured airlines will spawn.
+    
     ACA: [
         "Airbus A220-300",
         "Airbus A320-200",

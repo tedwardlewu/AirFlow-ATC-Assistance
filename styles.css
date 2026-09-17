@@ -17,10 +17,18 @@
     --line: rgba(138, 157, 176, 0.18);
     --line-strong: rgba(168, 185, 201, 0.28);
     --shadow: 0 28px 80px rgba(0, 0, 0, 0.4);
+    --motion-fast: 160ms;
+    --motion-base: 220ms;
+    --motion-slow: 320ms;
+    --motion-ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 * {
     box-sizing: border-box;
+}
+
+html {
+    scroll-behavior: smooth;
 }
 
 body {
@@ -28,6 +36,9 @@ body {
     min-height: 100vh;
     font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
     color: var(--text-dark);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
     background:
     radial-gradient(circle at top left, rgba(73, 106, 131, 0.24), transparent 26%),
     radial-gradient(circle at top right, rgba(225, 168, 92, 0.14), transparent 20%),
@@ -94,6 +105,8 @@ body::after {
     border: 1px solid var(--line);
     border-radius: 12px;
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    contain: paint;
+    transition: border-color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-base) var(--motion-ease), transform var(--motion-base) var(--motion-ease);
 }
 
 .topbar-copy {
@@ -211,7 +224,9 @@ body::after {
     border-radius: 12px;
     color: var(--text);
     box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
-    backdrop-filter: blur(14px);
+    backdrop-filter: blur(10px);
+    contain: paint;
+    transition: border-color var(--motion-fast) var(--motion-ease), box-shadow var(--motion-base) var(--motion-ease), transform var(--motion-base) var(--motion-ease);
 }
 
 .hero-card {
@@ -236,6 +251,10 @@ body::after {
 
 .panel {
     padding: 16px;
+}
+
+.schedule-panel {
+    grid-column: span 8;
 }
 
 .flights-panel,
@@ -383,8 +402,10 @@ body::after {
     background: rgba(6, 10, 15, 0.95);
     border: 1px solid rgba(142, 162, 178, 0.16);
     box-shadow: 0 16px 28px rgba(0, 0, 0, 0.26);
-    backdrop-filter: blur(10px);
+    backdrop-filter: blur(8px);
     overflow: hidden;
+    contain: layout paint;
+    transition: box-shadow var(--motion-base) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease);
 }
 
 .plane-side-panel-header {
@@ -486,6 +507,7 @@ body::after {
 
 .plane-side-panel-subsection {
     display: grid;
+    grid-template-rows: auto minmax(0, 1fr);
     flex: 1 1 auto;
     gap: 5px;
     min-height: 0;
@@ -538,6 +560,23 @@ body::after {
     transform: translateY(-1px);
     background: rgba(108, 255, 157, 0.18);
     border-color: rgba(108, 255, 157, 0.48);
+}
+
+.plane-side-panel-auto-toggle {
+    border-color: rgba(119, 183, 234, 0.32);
+    background: rgba(119, 183, 234, 0.12);
+    color: #e4f3ff;
+}
+
+.plane-side-panel-auto-toggle:hover {
+    background: rgba(119, 183, 234, 0.18);
+    border-color: rgba(119, 183, 234, 0.46);
+}
+
+.plane-side-panel-auto-toggle.active {
+    border-color: rgba(255, 196, 96, 0.45);
+    background: rgba(255, 196, 96, 0.18);
+    color: #fff2cf;
 }
 
 .plane-control-card small {
@@ -688,20 +727,36 @@ body::after {
 
 .plane-side-panel-list {
     display: grid;
+    align-content: start;
     flex: 1 1 auto;
     gap: 6px;
+    min-width: 0;
     min-height: 0;
+    height: 100%;
     overflow-y: auto;
+    overflow-x: hidden;
     padding-right: 4px;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    contain: size layout paint;
 }
 
 .plane-command-queue {
     display: grid;
+    align-content: start;
     flex: 1 1 auto;
     gap: 5px;
+    min-width: 0;
     min-height: 0;
+    height: 100%;
     overflow-y: auto;
+    overflow-x: hidden;
     padding-right: 4px;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    scrollbar-gutter: stable;
+    contain: size layout paint;
 }
 
 .plane-side-panel-nav {
@@ -823,6 +878,8 @@ body::after {
     border-radius: 14px;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.055), rgba(255, 255, 255, 0.028));
     border: 1px solid rgba(255, 255, 255, 0.1);
+    contain: content;
+    transition: transform var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), background var(--motion-fast) var(--motion-ease), box-shadow var(--motion-base) var(--motion-ease);
 }
 
 .plane-command-card.assignment {
@@ -894,6 +951,10 @@ body::after {
     border-radius: 12px;
     background: linear-gradient(180deg, rgba(255, 255, 255, 0.04), rgba(255, 255, 255, 0.025));
     border: 1px solid rgba(255, 255, 255, 0.08);
+    contain: content;
+    content-visibility: auto;
+    contain-intrinsic-size: 210px;
+    transition: transform var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), background var(--motion-fast) var(--motion-ease), box-shadow var(--motion-base) var(--motion-ease);
 }
 
 .plane-control-card small,
@@ -979,6 +1040,8 @@ body::after {
     border-radius: 8px;
     padding: 8px 10px;
     box-shadow: 0 10px 22px rgba(0, 0, 0, 0.24);
+    backdrop-filter: blur(6px);
+    transition: box-shadow var(--motion-base) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), background var(--motion-fast) var(--motion-ease);
 }
 
 .leaflet-control-layers label {
@@ -1311,7 +1374,9 @@ body::after {
     border: 1px solid rgba(142, 162, 178, 0.16);
     color: var(--text);
     box-shadow: 0 12px 22px rgba(0, 0, 0, 0.2);
-    backdrop-filter: blur(8px);
+    backdrop-filter: blur(6px);
+    contain: paint;
+    transition: transform var(--motion-base) var(--motion-ease), box-shadow var(--motion-base) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease);
 }
 
 .map-callout strong,
@@ -1394,6 +1459,10 @@ body::after {
     border: 1px solid rgba(255, 255, 255, 0.07);
     color: var(--text);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    contain: content;
+    content-visibility: auto;
+    contain-intrinsic-size: 116px;
+    transition: transform var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), background var(--motion-fast) var(--motion-ease), box-shadow var(--motion-base) var(--motion-ease);
 }
 
 .runway-card {
@@ -1435,11 +1504,96 @@ body::after {
 }
 
 .table-list,
+.schedule-list,
 .vehicle-list,
 .advisory-stack,
 .gate-grid {
     display: grid;
     gap: 10px;
+    scroll-behavior: smooth;
+}
+
+.schedule-row {
+    display: grid;
+    grid-template-columns: minmax(96px, 0.7fr) minmax(0, 1.2fr) minmax(170px, 1fr) minmax(96px, 0.6fr);
+    gap: 14px;
+    align-items: stretch;
+    padding: 16px;
+    border-radius: 14px;
+    background: linear-gradient(180deg, rgba(25, 37, 50, 0.96), rgba(16, 23, 32, 0.98));
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    color: var(--text);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+    contain: content;
+    content-visibility: auto;
+    contain-intrinsic-size: 124px;
+    transition: transform var(--motion-fast) var(--motion-ease), border-color var(--motion-fast) var(--motion-ease), background var(--motion-fast) var(--motion-ease), box-shadow var(--motion-base) var(--motion-ease);
+}
+
+@media (prefers-reduced-motion: reduce) {
+    html {
+        scroll-behavior: auto;
+    }
+
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.01ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.01ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+.schedule-time-block,
+.schedule-main,
+.schedule-city-block,
+.schedule-gate-block {
+    display: grid;
+    gap: 4px;
+}
+
+.schedule-city-block,
+.schedule-gate-block {
+    align-content: start;
+    padding-left: 14px;
+    border-left: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.schedule-gate-block {
+    justify-items: end;
+    text-align: right;
+}
+
+.schedule-row strong {
+    display: block;
+    font-size: 1rem;
+}
+
+.schedule-row .mono {
+    color: var(--muted);
+    font-size: 0.78rem;
+}
+
+.schedule-service-pill {
+    display: inline-flex;
+    width: fit-content;
+    padding: 5px 8px;
+    border-radius: 999px;
+    font-family: "IBM Plex Mono", monospace;
+    font-size: 0.69rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+}
+
+.schedule-service-pill.departure {
+    color: #102416;
+    background: rgba(133, 200, 161, 0.92);
+}
+
+.schedule-service-pill.arrival {
+    color: #0d2030;
+    background: rgba(134, 183, 210, 0.92);
 }
 
 .table-row {
@@ -1622,6 +1776,7 @@ body::after {
     }
 
     .stats-card,
+    .schedule-panel,
     .flights-panel,
     .gates-panel,
     .vehicles-panel,
@@ -1631,10 +1786,13 @@ body::after {
 
     .stats-grid,
     .gate-grid,
+    .schedule-row,
     .table-row {
         grid-template-columns: 1fr;
     }
 
+    .schedule-city-block,
+    .schedule-gate-block,
     .table-row-block,
     .vehicle-meta,
     .advisory-meta {
@@ -1642,11 +1800,13 @@ body::after {
         border-left: 0;
     }
 
+    .schedule-gate-block,
     .table-row-block-end {
         justify-items: start;
         text-align: left;
     }
 
+    .schedule-row,
     .table-row,
     .vehicle-card,
     .advisory-card,

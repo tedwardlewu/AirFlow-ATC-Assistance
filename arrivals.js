@@ -98,31 +98,19 @@ export function createPlaneArrivalOperations(dependencies) {
     }
 
     function getGoAroundLoopRadius(progress) {
-        return goAroundPatternOuterRadiusMeters
-            + (Math.sin(progress * Math.PI) * goAroundPatternRadiusVarianceMeters)
-            + (Math.sin(progress * Math.PI * 2) * (goAroundPatternRadiusVarianceMeters * 0.32));
+        return goAroundPatternOuterRadiusMeters;
     }
 
     function buildGoAroundPatternCenter(entryPoint, rejoinLeadPoint, heading, patternSide) {
-        const midpoint = interpolatePoint(entryPoint, rejoinLeadPoint, 0.5);
-        const loopAxisHeading = getHeadingBetweenPoints(entryPoint, rejoinLeadPoint);
-        const lateralOffsetPoint = projectPointByHeading(
-            midpoint,
-            normalizeHeading(loopAxisHeading + (patternSide * 90)),
-            goAroundPatternOuterRadiusMeters * 0.38
-        );
-
         return projectPointByHeading(
-            lateralOffsetPoint,
-            heading,
-            goAroundPatternOuterRadiusMeters * 0.12
+            entryPoint,
+            normalizeHeading(heading + (patternSide * 90)),
+            goAroundPatternOuterRadiusMeters
         );
     }
 
-    function buildGoAroundOrbitPoints(centerPoint, startBearing, endBearing, clockwise) {
-        const orbitSweep = clockwise
-            ? normalizeHeading(endBearing - startBearing) + 360
-            : -(normalizeHeading(startBearing - endBearing) + 360);
+    function buildGoAroundOrbitPoints(centerPoint, startBearing, clockwise) {
+        const orbitSweep = clockwise ? 300 : -300;
 
         return Array.from({ length: goAroundOrbitSamples }, (_, index) => {
             const progress = (index + 1) / goAroundOrbitSamples;
@@ -137,38 +125,41 @@ export function createPlaneArrivalOperations(dependencies) {
         const rejoinHeading = rejoinRoute.length > 1
             ? getHeadingBetweenPoints(rejoinRoute[0], rejoinRoute[1])
             : normalizeHeading(heading + 180);
-        const straightAheadPoint = projectPointByHeading(startPoint, heading, goAroundPatternStraightAheadMeters);
-        const turnOutPoint = projectPointByHeading(
-            straightAheadPoint,
-            normalizeHeading(heading + (patternSide * 24)),
-            goAroundPatternOuterRadiusMeters * 0.28
-        );
+        const straightAheadPoint = projectPointByHeading(startPoint, heading, goAroundPatternStraightAheadMeters * 0.7);
         const rejoinLeadPoint = projectPointByHeading(
             rejoinPoint,
             normalizeHeading(rejoinHeading + 180),
             goAroundPatternRejoinLeadMeters
         );
-        const rejoinBlendPoint = projectPointByHeading(
-            rejoinLeadPoint,
-            normalizeHeading(rejoinHeading + (patternSide * -22)),
-            goAroundPatternOuterRadiusMeters * 0.2
-        );
-        const loopCenter = buildGoAroundPatternCenter(turnOutPoint, rejoinBlendPoint, heading, patternSide);
-        const orbitEntryBearing = getHeadingBetweenPoints(loopCenter, turnOutPoint);
-        const orbitExitBearing = getHeadingBetweenPoints(loopCenter, rejoinBlendPoint);
-        const orbitEntryPoint = projectPointByHeading(loopCenter, orbitEntryBearing, getGoAroundLoopRadius(0));
-        const orbitPoints = buildGoAroundOrbitPoints(loopCenter, orbitEntryBearing, orbitExitBearing, patternSide > 0);
+        const loopCenter = buildGoAroundPatternCenter(straightAheadPoint, rejoinLeadPoint, heading, patternSide);
+        const orbitEntryBearing = getHeadingBetweenPoints(loopCenter, straightAheadPoint);
+        const orbitPoints = buildGoAroundOrbitPoints(loopCenter, orbitEntryBearing, patternSide > 0);
 
         return smoothRouteTurns(dedupeRoutePoints([
             startPoint,
             straightAheadPoint,
-            turnOutPoint,
-            orbitEntryPoint,
             ...orbitPoints,
-            rejoinBlendPoint,
             rejoinLeadPoint,
             rejoinPoint
-        ]), goAroundMaximumTurnDegrees);
+        ]), Math.max(goAroundMaximumTurnDegrees, 22));
+    }
+
+    function buildRouteTailFromProgress(routeProfile, progress) {
+        if (!routeProfile?.totalLength || !routeProfile.segments?.length) {
+            return [];
+        }
+
+        const clampedProgress = Math.min(Math.max(progress, 0), 0.999999);
+        const targetDistance = clampedProgress * routeProfile.totalLength;
+        const anchorPoint = interpolateRouteProfile(routeProfile, clampedProgress);
+        const tailPoints = routeProfile.segments
+            .filter((segment) => segment.endDistance > targetDistance + 1e-9)
+            .map((segment) => segment.end);
+
+        return dedupeRoutePoints([
+            [anchorPoint.lat, anchorPoint.lng],
+            ...tailPoints
+        ]);
     }
 
     function triggerPlaneGoAround(plane) {
@@ -176,10 +167,15 @@ export function createPlaneArrivalOperations(dependencies) {
             return;
         }
 
+        setLanding(plane);
+
         const previousRouteProfile = plane.routeProfile;
         const currentPointLatLng = interpolateRouteProfile(plane.routeProfile, plane.progress);
         const currentPoint = [currentPointLatLng.lat, currentPointLatLng.lng];
-        const rejoinRoute = [...(previousRouteProfile?.points ?? [])];
+        const rejoinProgress = plane.goAroundUsed && Number.isFinite(plane.goAroundEndProgress)
+            ? Math.min(Math.max(plane.goAroundEndProgress, 0), 0.999)
+            : 0;
+        const rejoinRoute = buildRouteTailFromProgress(previousRouteProfile, rejoinProgress);
 
         if (rejoinRoute.length < 2) {
             return;
@@ -405,15 +401,15 @@ export function createPlaneArrivalSpawner(dependencies) {
         const runwayCandidates = runwayLineSets.map((_, offset) => {
             return runwayLineSets[(nextArrivalRunwayIndex + offset) % runwayLineSets.length];
         });
-        const candidateRunway = runwayCandidates.find((entry) => !activeArrivalRunways.has(entry.name))
-            ?? null;
+        const availableRunwayCandidates = runwayCandidates.filter((entry) => !activeArrivalRunways.has(entry.name));
+        const candidateRunway = availableRunwayCandidates[0] ?? null;
 
         if (!candidateRunway) {
             return;
         }
 
         nextArrivalRunwayIndex = (runwayLineSets.indexOf(candidateRunway) + 1) % runwayLineSets.length;
-        const spawnSelection = selectArrivalSpawn(runwayCandidates, availableParkingEntries);
+        const spawnSelection = selectArrivalSpawn(availableRunwayCandidates, availableParkingEntries);
 
         if (!spawnSelection) {
             return;

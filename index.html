@@ -82,6 +82,9 @@
                             <div class="plane-command-queue" id="plane-command-queue"></div>
                         </section>
                         <section class="plane-side-panel-subsection plane-side-panel-view-hidden" id="plane-control-board-panel" aria-label="All aircraft board">
+                            <button type="button" class="plane-side-panel-spawn-button plane-side-panel-auto-toggle" id="auto-traffic-toggle" aria-pressed="false">
+                                Auto arrivals and takeoffs off
+                            </button>
                             <button type="button" class="plane-side-panel-spawn-button" id="manual-arrival-spawn">
                                 Spawn inbound aircraft
                             </button>
@@ -174,6 +177,17 @@
                     </div>
                 </div>
                 <div class="table-list" id="flight-table"></div>
+            </section>
+
+            <section class="panel schedule-panel">
+                <div class="section-heading compact">
+                    <div>
+                        <p class="eyebrow">Daily Program</p>
+                        <h2>Flight Schedule</h2>
+                        <p class="section-subtitle">Planned arrivals and departures with stand allocation and dispatch notes.</p>
+                    </div>
+                </div>
+                <div class="schedule-list" id="schedule-board"></div>
             </section>
 
             <section class="panel gates-panel">

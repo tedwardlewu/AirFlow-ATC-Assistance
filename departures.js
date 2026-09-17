@@ -27,10 +27,6 @@ export function createDepOps(deps) {
             plane.progress = getRunwayHoldProgress(plane);
         }
 
-        if (clr === "immediate" && plane.progress >= getRunwayHoldProgress(plane)) {
-            plane.progress = Math.min(Math.max(plane.progress, plane.runwayStart + 0.0005), 0.994);
-        }
-
         if (clr !== "immediate" && plane.progress >= plane.runwayStart && plane.progress < 0.995) {
             plane.progress = plane.runwayStart;
         }
@@ -42,6 +38,7 @@ export function createDepOps(deps) {
         clearPlaneApproachGuide(plane);
         plane.route = null;
         plane.routeProfile = null;
+        plane.autoTaxiActive = false;
         plane.parkingId = plane.standbyParkingId;
         plane.parkingName = plane.standbyParkingName;
         plane.runwayName = null;
@@ -71,10 +68,11 @@ export function createDepOps(deps) {
         updatePlanePopup(plane);
     }
 
-    function applyDepRoute(plane, depRoute, nextProg = 0) {
+    function applyDepRoute(plane, depRoute, nextProg = 0, options = {}) {
         clearPlaneApproachGuide(plane);
         plane.route = depRoute.route;
         plane.routeProfile = createRouteProfile(depRoute.route);
+        plane.autoTaxiActive = options.autoTaxiActive ?? plane.autoTaxiActive ?? false;
         plane.parkingId = depRoute.parkingId;
         plane.parkingName = depRoute.parkingName;
         plane.runwayName = depRoute.runwayName;
@@ -92,12 +90,37 @@ export function createDepOps(deps) {
         plane.goAroundEndProgress = 0;
         plane.goAroundReason = null;
         plane.autoGoAroundTriggered = false;
-        plane.departureClearance = "hold-short";
+        plane.departureClearance = options.departureClearance ?? "hold-short";
 
         const position = interpolateRouteProfile(plane.routeProfile, plane.progress);
         plane.marker.setLatLng(position);
         plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, getPlaneHeading(plane), map.getZoom()));
         updatePlanePopup(plane);
+    }
+
+    function applyReturnRoute(plane, routeData, nextProg = 0) {
+        clearPlaneApproachGuide(plane);
+        plane.route = routeData.route;
+        plane.routeProfile = createRouteProfile(routeData.route);
+        plane.autoTaxiActive = false;
+        plane.parkingId = routeData.parkingId;
+        plane.parkingName = routeData.parkingName;
+        plane.runwayName = routeData.runwayName;
+        plane.pushbackEnd = routeData.pushbackEnd;
+        plane.holdProgress = routeData.holdProgress;
+        plane.runwayStart = routeData.runwayStart;
+        plane.holdStartedAt = null;
+        plane.progress = Math.min(Math.max(nextProg, 0), 0.999);
+        plane.returningToGate = true;
+        plane.hasAssignedRunway = true;
+        plane.taxiRequestPending = false;
+        plane.taxiRequestIssuedAt = null;
+        plane.departureClearance = "hold-short";
+
+        const position = interpolateRouteProfile(plane.routeProfile, plane.progress);
+        plane.marker.setLatLng(position);
+        plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, getPlaneHeading(plane), map.getZoom()));
+        updatePlanePopup(plane, true);
     }
 
     function abortTakeoff(plane) {
@@ -116,26 +139,7 @@ export function createDepOps(deps) {
             return;
         }
 
-        plane.route = gateRoute.route;
-        plane.routeProfile = createRouteProfile(gateRoute.route);
-        plane.parkingId = gateRoute.parkingId;
-        plane.parkingName = gateRoute.parkingName;
-        plane.runwayName = null;
-        plane.pushbackEnd = 0;
-        plane.holdProgress = 0;
-        plane.runwayStart = 1;
-        plane.holdStartedAt = null;
-        plane.progress = 0;
-        plane.returningToGate = true;
-        plane.hasAssignedRunway = true;
-        plane.taxiRequestPending = false;
-        plane.taxiRequestIssuedAt = null;
-        plane.departureClearance = "hold-short";
-
-        const position = interpolateRouteProfile(plane.routeProfile, plane.progress);
-        plane.marker.setLatLng(position);
-        plane.marker.setIcon(createPlaneMarkerIcon(plane.callsign, getPlaneHeading(plane), map.getZoom()));
-        updatePlanePopup(plane, true);
+        applyReturnRoute(plane, gateRoute, 0);
     }
 
     function rerouteToRunway(plane, rwy) {
@@ -176,10 +180,73 @@ export function createDepOps(deps) {
         plane.marker.openPopup();
     }
 
+    function rerouteTaxiConflict(plane, routingOptions = {}) {
+        const position = plane.marker.getLatLng();
+
+        if (!position) {
+            return false;
+        }
+
+        if (plane.returningToGate) {
+            const gateRoute = buildReturnToGateRoute(
+                [position.lat, position.lng],
+                parkingLines,
+                taxiLines,
+                runwayLines,
+                taxiGraph,
+                plane.standbyParkingId,
+                plane.gateCoords,
+                routingOptions
+            ) ?? buildReturnToGateRoute(
+                [position.lat, position.lng],
+                parkingLines,
+                taxiLines,
+                runwayLines,
+                surfaceGraph,
+                plane.standbyParkingId,
+                plane.gateCoords,
+                routingOptions
+            );
+
+            if (!gateRoute) {
+                return false;
+            }
+
+            applyReturnRoute(plane, gateRoute, 0);
+            return true;
+        }
+
+        if (!plane.runwayName) {
+            return false;
+        }
+
+        const depRoute = buildDirectDepartureRoute(
+            [position.lat, position.lng],
+            taxiLines,
+            runwayLines,
+            holdLines,
+            surfaceGraph,
+            taxiGraph,
+            0,
+            plane.runwayName,
+            routingOptions
+        );
+
+        if (!depRoute) {
+            return false;
+        }
+
+        applyDepRoute(plane, depRoute, 0, {
+            departureClearance: plane.departureClearance ?? "hold-short"
+        });
+        return true;
+    }
+
     return {
         setDepClearance,
         parkPlane,
         abortTakeoff,
-        rerouteToRunway
+        rerouteToRunway,
+        rerouteTaxiConflict
     };
 }
